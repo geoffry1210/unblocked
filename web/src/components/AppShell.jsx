@@ -81,6 +81,11 @@ const DRAW_GROUPS = [
       { key: "triangle", label: "Triangle", clicksNeeded: 3 },
       { key: "curve", label: "Curve", clicksNeeded: 3 },
       { key: "arc", label: "Arc", clicksNeeded: 3 },
+      { key: "polygon", label: "Polygon", clicksNeeded: "unlimited" },
+      { key: "polyline", label: "Polyline", clicksNeeded: "unlimited" },
+      { key: "path", label: "Path", clicksNeeded: "unlimited" },
+      { key: "brush", label: "Brush", clicksNeeded: "freehand" },
+      { key: "highlighter", label: "Highlighter", clicksNeeded: "freehand" },
     ],
   },
   {
@@ -122,6 +127,11 @@ const TOOL_ICONS = {
   triangle: "△",
   curve: "∿",
   arc: "⌒",
+  polygon: "⬠",
+  polyline: "⌇",
+  path: "↝",
+  brush: "🖌",
+  highlighter: "▰",
   text: "T",
 };
 
@@ -655,6 +665,15 @@ export function AppShell({ onBack }) {
       return;
     }
 
+    if (toolDef.clicksNeeded === "unlimited") {
+      // Polygon/Polyline/Path — keeps accumulating points on every click;
+      // there's no fixed count to auto-finish on, so the person taps a
+      // "done" button (rendered in the header overlay) to close it out,
+      // or cancels to discard what's been placed so far.
+      setPendingPoints((prev) => [...prev, point]);
+      return;
+    }
+
     const nextPoints = [...pendingPoints, point];
     if (nextPoints.length < toolDef.clicksNeeded) {
       setPendingPoints(nextPoints);
@@ -663,6 +682,29 @@ export function AppShell({ onBack }) {
       setPendingPoints([]);
       setDrawTool(null);
     }
+  };
+
+  const finishUnlimitedDrawing = () => {
+    if (pendingPoints.length >= 2) {
+      setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: drawTool, points: pendingPoints }]);
+    }
+    setPendingPoints([]);
+    setDrawTool(null);
+  };
+
+  const cancelDrawing = () => {
+    setPendingPoints([]);
+    setDrawTool(null);
+  };
+
+  // Brush/Highlighter capture a whole freehand stroke in Chart.jsx (via
+  // native pointer events, since lightweight-charts' click handler only
+  // fires on discrete taps, not drag) and hand back the full point list
+  // once the gesture ends — bypassing the click-by-click flow entirely.
+  const handleFreehandComplete = (points) => {
+    if (points.length < 2) return;
+    setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: drawTool, points, color: drawTool === "highlighter" ? "#F5B70066" : "#F5B700" }]);
+    setDrawTool(null);
   };
 
   const removeDrawing = (id) => setDrawings((prev) => prev.filter((d) => d.id !== id));
@@ -766,13 +808,21 @@ export function AppShell({ onBack }) {
 
         <main style={{ flex: 1, position: "relative", padding: "12px 16px 4px", minHeight: 0, display: "flex", flexDirection: "column" }}>
           {drawTool && (
-            <div style={{ position: "absolute", top: 4, left: 16, zIndex: 5, fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", background: "#0B0E1499", padding: "2px 8px", borderRadius: 4 }}>
+            <div style={{ position: "absolute", top: 4, left: 16, zIndex: 5, display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", background: "#0B0E1499", padding: "2px 8px", borderRadius: 4 }}>
               {(() => {
                 const toolDef = ALL_DRAW_TOOLS.find((t) => t.key === drawTool);
-                const needed = toolDef?.clicksNeeded ?? 1;
+                const needed = toolDef?.clicksNeeded;
+                if (needed === "freehand") return "drag to draw";
+                if (needed === "unlimited") return `${pendingPoints.length} point${pendingPoints.length === 1 ? "" : "s"} placed`;
                 const done = pendingPoints.length;
                 return needed === 1 ? "click point" : `click point ${done + 1} of ${needed}`;
               })()}
+              {ALL_DRAW_TOOLS.find((t) => t.key === drawTool)?.clicksNeeded === "unlimited" && (
+                <>
+                  <span onClick={finishUnlimitedDrawing} style={{ cursor: "pointer", color: pendingPoints.length >= 2 ? "#2ED9A0" : "#4A5063" }}>✓ done</span>
+                  <span onClick={cancelDrawing} style={{ cursor: "pointer", color: "#FF5C77" }}>✕ cancel</span>
+                </>
+              )}
             </div>
           )}
           <WhalePulseLayer events={whaleEvents} candles={candles} />
@@ -795,6 +845,7 @@ export function AppShell({ onBack }) {
               drawTool={drawTool}
               drawToolClicksNeeded={ALL_DRAW_TOOLS.find((t) => t.key === drawTool)?.clicksNeeded ?? 1}
               onChartClick={handleChartClick}
+              onFreehandComplete={handleFreehandComplete}
               onLoadMore={loadMore}
             />
           )}

@@ -125,6 +125,7 @@ export function TradingChart({
   drawTool,
   drawToolClicksNeeded = 1,
   onChartClick,
+  onFreehandComplete,
   onLoadMore,
 }) {
   const containerRef = useRef(null);
@@ -137,17 +138,21 @@ export function TradingChart({
   const redrawDrawingsRef = useRef(() => {});
   const drawToolRef = useRef(drawTool);
   const onChartClickRef = useRef(onChartClick);
+  const onFreehandCompleteRef = useRef(onFreehandComplete);
   const onLoadMoreRef = useRef(onLoadMore);
   const loadMoreArmedRef = useRef(true); // debounce: only fire once per approach to the edge
   const hoverPointRef = useRef(null); // live {time, price} under the pointer — drives the rubber-band preview
   const clicksNeededRef = useRef(drawToolClicksNeeded);
+  const isPaintingRef = useRef(false); // true while a brush/highlighter stroke is actively being dragged
+  const freehandPointsRef = useRef([]);
 
   useEffect(() => {
     drawToolRef.current = drawTool;
     onChartClickRef.current = onChartClick;
+    onFreehandCompleteRef.current = onFreehandComplete;
     onLoadMoreRef.current = onLoadMore;
     clicksNeededRef.current = drawToolClicksNeeded;
-  }, [drawTool, onChartClick, onLoadMore, drawToolClicksNeeded]);
+  }, [drawTool, onChartClick, onFreehandComplete, onLoadMore, drawToolClicksNeeded]);
 
   // ---- create chart once ----
   useLayoutEffect(() => {
@@ -197,7 +202,46 @@ export function TradingChart({
       redraw();
     });
 
-    // Pan-to-load-more: when the visible logical range's left edge gets
+    // Brush/Highlighter: lightweight-charts' subscribeClick only fires on
+    // discrete taps, not drag — so freehand capture happens via native
+    // pointer events directly on the container instead, bypassing the
+    // click-based drawing flow entirely.
+    const isFreehandTool = () => drawToolRef.current === "brush" || drawToolRef.current === "highlighter";
+    const capturePoint = (e) => {
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const time = chart.timeScale().coordinateToTime(x);
+      const price = candleSeries.coordinateToPrice(y);
+      if (time != null && price != null) freehandPointsRef.current.push({ time, price });
+    };
+    const onPointerDown = (e) => {
+      if (!isFreehandTool()) return;
+      isPaintingRef.current = true;
+      freehandPointsRef.current = [];
+      capturePoint(e);
+    };
+    const onPointerMove = (e) => {
+      if (!isPaintingRef.current) return;
+      capturePoint(e);
+      redraw();
+    };
+    const onPointerUp = () => {
+      if (!isPaintingRef.current) return;
+      isPaintingRef.current = false;
+      if (freehandPointsRef.current.length >= 2) {
+        onFreehandCompleteRef.current?.(freehandPointsRef.current.slice());
+      }
+      freehandPointsRef.current = [];
+      redraw();
+    };
+    container.addEventListener("pointerdown", onPointerDown);
+    container.addEventListener("pointermove", onPointerMove);
+    container.addEventListener("pointerup", onPointerUp);
+    container.addEventListener("pointerleave", onPointerUp);
+    container.addEventListener("pointercancel", onPointerUp);
+
+
     // within 20 bars of the start of loaded data, ask the parent for an
     // older page. loadMoreArmedRef prevents re-firing on every pixel of
     // the same pan gesture — it re-arms once the user scrolls back away
@@ -215,6 +259,11 @@ export function TradingChart({
     });
 
     return () => {
+      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("pointermove", onPointerMove);
+      container.removeEventListener("pointerup", onPointerUp);
+      container.removeEventListener("pointerleave", onPointerUp);
+      container.removeEventListener("pointercancel", onPointerUp);
       chart.remove();
       chartRef.current = null;
     };
@@ -613,6 +662,36 @@ export function TradingChart({
               addLine(p1.x, p1.y, p2.x, p2.y, d.color || "#F5B700"); // 3 points in a line — no arc possible
             }
           }
+        } else if (d.type === "polygon") {
+          const pts = d.points.map(toXY).filter(Boolean);
+          if (pts.length >= 2) {
+            const el = document.createElementNS(ns, "polygon");
+            el.setAttribute("points", pts.map((p) => `${p.x},${p.y}`).join(" "));
+            el.setAttribute("fill", d.color || "#F5B700");
+            el.setAttribute("fill-opacity", "0.1");
+            el.setAttribute("stroke", d.color || "#F5B700");
+            el.setAttribute("stroke-width", "1");
+            target.appendChild(el);
+          }
+        } else if (d.type === "polyline" || d.type === "path") {
+          const pts = d.points.map(toXY).filter(Boolean);
+          addPolyline(pts, d.color || "#F5B700");
+        } else if (d.type === "brush") {
+          const pts = d.points.map(toXY).filter(Boolean);
+          addPolyline(pts, d.color || "#F5B700");
+        } else if (d.type === "highlighter") {
+          const pts = d.points.map(toXY).filter(Boolean);
+          if (pts.length >= 2) {
+            const el = document.createElementNS(ns, "polyline");
+            el.setAttribute("points", pts.map((p) => `${p.x},${p.y}`).join(" "));
+            el.setAttribute("fill", "none");
+            el.setAttribute("stroke", d.color || "#F5B70066");
+            el.setAttribute("stroke-width", "8");
+            el.setAttribute("stroke-linecap", "round");
+            el.setAttribute("stroke-linejoin", "round");
+            el.setAttribute("opacity", "0.4");
+            target.appendChild(el);
+          }
         } else if (d.type === "rectangle") {
           const p1 = toXY(d.points[0]);
           const p2 = toXY(d.points[1]);
@@ -636,6 +715,12 @@ export function TradingChart({
           svg.appendChild(el);
         }
       });
+
+      // Live preview of the freehand stroke currently being dragged.
+      if (isPaintingRef.current && freehandPointsRef.current.length > 1) {
+        const pts = freehandPointsRef.current.map(toXY).filter(Boolean);
+        addPolyline(pts, "#F5B700");
+      }
 
       // ---- live rubber-band preview while placing a drawing ----
       const hover = hoverPointRef.current;
