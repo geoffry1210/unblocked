@@ -1,37 +1,20 @@
-// GET /symbols[?exchange=binance&marketType=spot]
-// Returns the list of actively tracked pairs so the frontend can populate
-// the symbol search and watchlist without hardcoding the list client-side.
-//
-// Called with no filters, returns every active symbol across every
-// exchange/market type, each tagged with its exchange and marketType so
-// the frontend can group or filter them.
+// GET /symbols
+// Returns every known pair — active or not — so search/discovery can find
+// any of the thousands of symbols synced in, not just the small curated
+// set that's actively relayed at any given moment. Requesting candles for
+// an inactive one (see routes/candles.js) is what flips it on.
 
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 
 const router = Router();
 
-router.get("/", async (req, res) => {
-  const { exchange, marketType } = req.query;
-  const conditions = ["active = true"];
-  const params = [];
-
-  if (exchange) {
-    params.push(exchange);
-    conditions.push(`exchange = $${params.length}`);
-  }
-  if (marketType) {
-    params.push(marketType);
-    conditions.push(`market_type = $${params.length}`);
-  }
-
+router.get("/", async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT pair, display, exchange, market_type AS "marketType"
+      `SELECT pair, display, exchange, market_type AS "marketType", active
        FROM symbols
-       WHERE ${conditions.join(" AND ")}
-       ORDER BY exchange, market_type, pair`,
-      params
+       ORDER BY is_core DESC, active DESC, pair`
     );
     res.json(rows);
   } catch (err) {

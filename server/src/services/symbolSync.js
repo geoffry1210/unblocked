@@ -1,15 +1,20 @@
 // Discovers every USDT/USD/USDC-quoted, currently-tradable pair on each
 // live exchange/market-type and upserts them into the `symbols` table.
 //
+// IMPORTANT: newly-discovered symbols are inserted INACTIVE. Symbol
+// discovery and relay activation are deliberately separate now — this
+// table can (and should) hold every pair that exists, but only a small
+// curated "core" set plus whatever's been on-demand-activated recently
+// (see routes/candles.js, services/pruner.js) is ever actually relayed or
+// has candles stored. Running this sync again does NOT reactivate
+// anything that was previously live and got pruned for going idle — that
+// used to be exactly the bug that filled a free-tier Postgres and crashed
+// the relay from holding thousands of live subscriptions in memory.
+//
 // This does NOT deactivate symbols that disappear from a given sync pass —
 // deliberately conservative, so a transient API hiccup on one exchange
 // can't silently wipe out the whole symbol list. Revisit if stale/delisted
 // pairs actually become a problem in practice.
-//
-// After running this, the relay (server/src/services/exchanges/*) picks
-// up the expanded symbol list on its next restart — trigger a redeploy (or
-// just wait for the next natural restart) to have it take effect, and run
-// the backfill afterward to fill history for anything newly added.
 
 import { pool } from "../db/pool.js";
 
@@ -107,11 +112,15 @@ export async function syncSymbols({ onProgress = () => {} } = {}) {
       const pairs = await fn();
       let count = 0;
       for (const p of pairs) {
+        // Only inserts as inactive metadata on first discovery; on
+        // conflict (already known), touches display only — never flips
+        // active state either way, so this can run as often as needed
+        // without undoing the pruner or reactivating stale symbols.
         await pool.query(
           `INSERT INTO symbols (pair, display, exchange, market_type, active)
-           VALUES ($1, $2, $3, $4, true)
+           VALUES ($1, $2, $3, $4, false)
            ON CONFLICT (exchange, market_type, pair)
-           DO UPDATE SET display = EXCLUDED.display, active = true`,
+           DO UPDATE SET display = EXCLUDED.display`,
           [p.pair, p.display, p.exchange, p.marketType]
         );
         count++;
@@ -125,7 +134,7 @@ export async function syncSymbols({ onProgress = () => {} } = {}) {
     }
   }
 
-  const summary = `Done. ${totalUpserted} symbols synced across ${DISCOVERERS.length} exchange/market combos. Restart the server (redeploy) to pick up the new list in the live relay, then run a backfill for the new pairs.`;
+  const summary = `Done. ${totalUpserted} symbols discovered across ${DISCOVERERS.length} exchange/market combos (inactive by default — request a chart for one to activate it, or use /internal/symbols to bulk-activate).`;
   onProgress(summary);
   return { totalUpserted, perExchange, summary };
 }

@@ -9,9 +9,21 @@
 // `before` (optional, ms epoch) fetches candles strictly older than that
 // timestamp — this is how the frontend loads more history on demand
 // instead of being capped at whatever the initial page returned.
+//
+// On-demand activation: the symbols table holds thousands of discovered
+// pairs, but only a curated "core" set is actively relayed/stored at any
+// time (see services/pruner.js) — this is what keeps a free-tier Postgres
+// from filling up the way it did before. When someone requests a symbol
+// that isn't yet active, this route flips it on and kicks off a
+// background backfill so history starts populating. Known limitation:
+// live ticks for a freshly-activated symbol only start flowing once the
+// relay picks it up on its next restart (same restart-to-pick-up-changes
+// behavior symbolSync.js already documents) — historical candles are
+// available immediately as the backfill completes, though.
 
 import { Router } from "express";
 import { pool } from "../db/pool.js";
+import { runBackfill } from "../services/backfillRunner.js";
 
 const router = Router();
 
@@ -31,10 +43,36 @@ router.get("/", async (req, res) => {
   if (before && (Number.isNaN(beforeMs) || beforeMs <= 0)) {
     return res.status(400).json({ error: "before must be a positive epoch-ms timestamp" });
   }
+  const pair = symbol.toUpperCase();
 
   try {
+    // Touch last_requested_at on every request (keeps the pruner from
+    // deactivating something actively being viewed), and detect + flip on
+    // a currently-inactive symbol in the same round trip.
+    const { rows: symRows } = await pool.query(
+      `UPDATE symbols SET last_requested_at = now()
+       WHERE exchange = $1 AND market_type = $2 AND pair = $3
+       RETURNING active`,
+      [exchange, marketType, pair]
+    );
+
+    if (symRows.length > 0 && symRows[0].active === false) {
+      await pool.query(
+        `UPDATE symbols SET active = true WHERE exchange = $1 AND market_type = $2 AND pair = $3`,
+        [exchange, marketType, pair]
+      );
+      console.log(`On-demand activation: ${exchange}/${marketType} ${pair} — starting background backfill`);
+      // Fire-and-forget — the route responds immediately with whatever
+      // candles exist right now (likely none yet), and the frontend's
+      // existing "no candles yet" state covers the gap gracefully while
+      // this fills in behind the scenes.
+      runBackfill({ exchangeFilter: exchange, symbolFilter: pair }).catch((err) =>
+        console.error(`Background backfill failed for ${exchange}/${marketType} ${pair}`, err)
+      );
+    }
+
     const conditions = ["symbol = $1", "timeframe = $2", "exchange = $3", "market_type = $4"];
-    const params = [symbol.toUpperCase(), tf, exchange, marketType];
+    const params = [pair, tf, exchange, marketType];
     if (beforeMs) {
       params.push(new Date(beforeMs).toISOString());
       conditions.push(`open_time < $${params.length}`);
@@ -50,7 +88,6 @@ router.get("/", async (req, res) => {
       params
     );
 
-    // Reverse to ascending order — frontend expects oldest-first for charting.
     res.json(rows.reverse());
   } catch (err) {
     console.error("Failed to fetch candles", err);

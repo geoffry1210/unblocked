@@ -8,6 +8,7 @@ import { createServer } from "http";
 import { startAllRelays } from "./services/exchanges/index.js";
 import { attachWebSocketServer } from "./services/wsServer.js";
 import { startWhaleAlertPoller } from "./services/whaleAlertPoller.js";
+import { startPruner } from "./services/pruner.js";
 import candlesRouter from "./routes/candles.js";
 import symbolsRouter from "./routes/symbols.js";
 import adminBackfillRouter from "./routes/adminBackfill.js";
@@ -50,6 +51,13 @@ pool
   .catch((err) => {
     console.error("Failed to start whale alert poller", err);
   });
+
+// Keeps on-demand-activated symbols (see routes/candles.js) from
+// accumulating forever — anything non-core that's gone idle gets
+// deactivated and its candle history deleted, which is what actually
+// prevents storage from creeping back toward the limit that took the
+// site down before.
+startPruner();
 
 const port = process.env.PORT || 3001;
 server.listen(port, () => console.log(`Unblocked server listening on :${port}`));
