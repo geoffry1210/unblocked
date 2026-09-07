@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchSymbols } from "../lib/api.js";
 import { useMarketData } from "../lib/useMarketData.js";
-import { sma, ema, bollinger, rsi, macd, vwap, stochRsi } from "../lib/indicators.js";
+import {
+  sma, ema, bollinger, rsi, macd, vwap, stochRsi,
+  atr, adx, aroon, stochastic, cci, williamsR, obv, momentum, roc,
+  awesomeOscillator, acceleratorOscillator, standardDeviation, donchianChannels,
+  keltnerChannels, moneyFlowIndex, chaikinMoneyFlow, vwma, balanceOfPower, trix,
+  elderForceIndex, superTrend, ichimoku, ultimateOscillator, typicalPrice, medianPrice,
+  averagePrice, envelopes,
+} from "../lib/indicators.js";
 import { TradingChart } from "./Chart.jsx";
 import { AdSlot } from "./AdSlot.jsx";
+import { IndicatorPicker } from "./IndicatorPicker.jsx";
 
 // Each indicator now carries its own config (period, color, etc.), not just
 // an on/off flag — this is what makes the settings popover possible.
@@ -15,6 +23,37 @@ const INDICATOR_DEFS = {
   rsi: { label: "RSI", type: "pane", defaults: { enabled: true, period: 14, color: "#7C5CFF" } },
   macd: { label: "MACD", type: "pane", defaults: { enabled: false, fast: 12, slow: 26, signal: 9, color: "#F5B700" } },
   stochrsi: { label: "Stoch RSI", type: "pane", defaults: { enabled: false, period: 14, smoothD: 3, color: "#2ED9A0" } },
+
+  // Batch 2 — added via the indicator picker (see IndicatorPicker.jsx /
+  // indicatorCatalog.js). All default to disabled since there are now 31
+  // total; the picker's job is discovery, not pre-cluttering the toolbar.
+  atr: { label: "ATR", type: "pane", defaults: { enabled: false, period: 14, color: "#F5B700" } },
+  adx: { label: "ADX", type: "pane", defaults: { enabled: false, period: 14, color: "#7C5CFF" } },
+  aroon: { label: "Aroon", type: "pane", defaults: { enabled: false, period: 14, color: "#2ED9A0" } },
+  stoch: { label: "Stochastic", type: "pane", defaults: { enabled: false, period: 14, smoothD: 3, color: "#2ED9A0" } },
+  cci: { label: "CCI", type: "pane", defaults: { enabled: false, period: 20, color: "#F5B700" } },
+  williamsr: { label: "Williams %R", type: "pane", defaults: { enabled: false, period: 14, color: "#FF5C77" } },
+  obv: { label: "OBV", type: "pane", defaults: { enabled: false, color: "#4FA9FF" } },
+  mom: { label: "Momentum", type: "pane", defaults: { enabled: false, period: 10, color: "#7C5CFF" } },
+  roc: { label: "ROC", type: "pane", defaults: { enabled: false, period: 9, color: "#2ED9A0" } },
+  ao: { label: "Awesome Osc", type: "pane", defaults: { enabled: false, color: "#F5B700" } },
+  ac: { label: "Accelerator Osc", type: "pane", defaults: { enabled: false, color: "#7C5CFF" } },
+  stddev: { label: "Std Deviation", type: "pane", defaults: { enabled: false, period: 20, color: "#FF9F40" } },
+  donchian: { label: "Donchian", type: "overlay", defaults: { enabled: false, period: 20, color: "#4FA9FF" } },
+  keltner: { label: "Keltner", type: "overlay", defaults: { enabled: false, period: 20, mult: 2, color: "#7C5CFF" } },
+  mfi: { label: "MFI", type: "pane", defaults: { enabled: false, period: 14, color: "#F5B700" } },
+  cmf: { label: "Chaikin MF", type: "pane", defaults: { enabled: false, period: 20, color: "#2ED9A0" } },
+  vwma: { label: "VWMA", type: "overlay", defaults: { enabled: false, period: 20, color: "#FF9F40" } },
+  bop: { label: "BOP", type: "pane", defaults: { enabled: false, color: "#7C5CFF" } },
+  trix: { label: "TRIX", type: "pane", defaults: { enabled: false, period: 15, color: "#F5B700" } },
+  efi: { label: "Force Index", type: "pane", defaults: { enabled: false, period: 13, color: "#FF5C77" } },
+  supertrend: { label: "SuperTrend", type: "overlay", defaults: { enabled: false, period: 10, mult: 3, color: "#2ED9A0" } },
+  ichimoku: { label: "Ichimoku", type: "overlay", defaults: { enabled: false, color: "#7C5CFF" } },
+  ultosc: { label: "Ultimate Osc", type: "pane", defaults: { enabled: false, color: "#F5B700" } },
+  typicalprice: { label: "Typical Price", type: "overlay", defaults: { enabled: false, color: "#4FA9FF" } },
+  medianprice: { label: "Median Price", type: "overlay", defaults: { enabled: false, color: "#4FA9FF" } },
+  avgprice: { label: "Average Price", type: "overlay", defaults: { enabled: false, color: "#4FA9FF" } },
+  envelopes: { label: "Envelopes", type: "overlay", defaults: { enabled: false, period: 20, color: "#7C5CFF" } },
 };
 
 const COLOR_PRESETS = ["#F5B700", "#2ED9A0", "#7C5CFF", "#FF5C77", "#FF9F40", "#4FA9FF"];
@@ -99,6 +138,22 @@ const DRAW_GROUPS = [
 ];
 
 const ALL_DRAW_TOOLS = DRAW_GROUPS.flatMap((g) => g.tools);
+
+// IndicatorPicker's catalog uses its own stable `id`s (indicatorCatalog.js);
+// this maps each implemented catalog entry to the INDICATOR_DEFS key that
+// actually renders it here. Not always 1:1 — e.g. catalog's "Directional
+// Movement" (id "dm") reuses the same ADX calculation and key, since +DI/-DI
+// already come back from adx().
+const CATALOG_ID_TO_DEF_KEY = {
+  ao: "ao", aosc: "ao", ac: "ac", aroon: "aroon", adx: "adx", dm: "adx",
+  avgprice: "avgprice", atr: "atr", bop: "bop", bb: "bb", cmf: "cmf", cci: "cci",
+  donchian: "donchian", efi: "efi", envelopes: "envelopes", ichimoku: "ichimoku",
+  keltner: "keltner", medianprice: "medianprice", momentum: "mom", mfi: "mfi",
+  ma: "ma20", macd: "macd", obv: "obv", roc: "roc", rsi: "rsi", stddev: "stddev",
+  stoch: "stoch", stochrsi: "stochrsi", supertrend: "supertrend", trix: "trix",
+  typicalprice: "typicalprice", ultosc: "ultosc", vwap: "vwap", vwma: "vwma",
+  williamsr: "williamsr",
+};
 
 // Per-tool icons for the flyout grid — name shows only as a hover tooltip
 // (native `title` attribute), not as always-visible text.
@@ -497,6 +552,7 @@ export function AppShell({ onBack }) {
   const [magnetOn, setMagnetOn] = useState(false);
   const [locked, setLocked] = useState(false);
   const [drawingsHidden, setDrawingsHidden] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     fetchSymbols()
@@ -552,9 +608,50 @@ export function AppShell({ onBack }) {
       rsiVals: rsi(closes, cfg.rsi.period),
       macdVals: macd(closes, cfg.macd.fast, cfg.macd.slow, cfg.macd.signal),
       stochRsiVals: stochRsi(closes, cfg.stochrsi.period, cfg.stochrsi.period, cfg.stochrsi.smoothD),
+      // Batch 2 — only computed when enabled, since several of these (esp.
+      // Ichimoku, ADX) are meaningfully more expensive than a moving average.
+      atrVals: cfg.atr.enabled ? atr(candles, cfg.atr.period) : null,
+      adxVals: cfg.adx.enabled ? adx(candles, cfg.adx.period) : null,
+      aroonVals: cfg.aroon.enabled ? aroon(candles, cfg.aroon.period) : null,
+      stochVals: cfg.stoch.enabled ? stochastic(candles, cfg.stoch.period, cfg.stoch.smoothD, 3) : null,
+      cciVals: cfg.cci.enabled ? cci(candles, cfg.cci.period) : null,
+      williamsRVals: cfg.williamsr.enabled ? williamsR(candles, cfg.williamsr.period) : null,
+      obvVals: cfg.obv.enabled ? obv(candles) : null,
+      momVals: cfg.mom.enabled ? momentum(closes, cfg.mom.period) : null,
+      rocVals: cfg.roc.enabled ? roc(closes, cfg.roc.period) : null,
+      aoVals: cfg.ao.enabled ? awesomeOscillator(candles) : null,
+      acVals: cfg.ac.enabled ? acceleratorOscillator(candles) : null,
+      stddevVals: cfg.stddev.enabled ? standardDeviation(closes, cfg.stddev.period) : null,
+      donchianVals: cfg.donchian.enabled ? donchianChannels(candles, cfg.donchian.period) : null,
+      keltnerVals: cfg.keltner.enabled ? keltnerChannels(candles, cfg.keltner.period, cfg.keltner.mult) : null,
+      mfiVals: cfg.mfi.enabled ? moneyFlowIndex(candles, cfg.mfi.period) : null,
+      cmfVals: cfg.cmf.enabled ? chaikinMoneyFlow(candles, cfg.cmf.period) : null,
+      vwmaVals: cfg.vwma.enabled ? vwma(candles, cfg.vwma.period) : null,
+      bopVals: cfg.bop.enabled ? balanceOfPower(candles) : null,
+      trixVals: cfg.trix.enabled ? trix(closes, cfg.trix.period) : null,
+      efiVals: cfg.efi.enabled ? elderForceIndex(candles, cfg.efi.period) : null,
+      supertrendVals: cfg.supertrend.enabled ? superTrend(candles, cfg.supertrend.period, cfg.supertrend.mult) : null,
+      ichimokuVals: cfg.ichimoku.enabled ? ichimoku(candles) : null,
+      ultoscVals: cfg.ultosc.enabled ? ultimateOscillator(candles) : null,
+      typicalPriceVals: cfg.typicalprice.enabled ? typicalPrice(candles) : null,
+      medianPriceVals: cfg.medianprice.enabled ? medianPrice(candles) : null,
+      avgPriceVals: cfg.avgprice.enabled ? averagePrice(candles) : null,
+      envelopesVals: cfg.envelopes.enabled ? envelopes(closes, cfg.envelopes.period) : null,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [candles, cfg.ma20.period, cfg.ema9.period, cfg.bb.period, cfg.bb.mult, cfg.rsi.period, cfg.macd.fast, cfg.macd.slow, cfg.macd.signal, cfg.stochrsi.period, cfg.stochrsi.smoothD]
+    [
+      candles, cfg.ma20.period, cfg.ema9.period, cfg.bb.period, cfg.bb.mult, cfg.rsi.period,
+      cfg.macd.fast, cfg.macd.slow, cfg.macd.signal, cfg.stochrsi.period, cfg.stochrsi.smoothD,
+      cfg.atr.enabled, cfg.atr.period, cfg.adx.enabled, cfg.adx.period, cfg.aroon.enabled, cfg.aroon.period,
+      cfg.stoch.enabled, cfg.stoch.period, cfg.stoch.smoothD, cfg.cci.enabled, cfg.cci.period,
+      cfg.williamsr.enabled, cfg.williamsr.period, cfg.obv.enabled, cfg.mom.enabled, cfg.mom.period,
+      cfg.roc.enabled, cfg.roc.period, cfg.ao.enabled, cfg.ac.enabled, cfg.stddev.enabled, cfg.stddev.period,
+      cfg.donchian.enabled, cfg.donchian.period, cfg.keltner.enabled, cfg.keltner.period, cfg.keltner.mult,
+      cfg.mfi.enabled, cfg.mfi.period, cfg.cmf.enabled, cfg.cmf.period, cfg.vwma.enabled, cfg.vwma.period,
+      cfg.bop.enabled, cfg.trix.enabled, cfg.trix.period, cfg.efi.enabled, cfg.efi.period,
+      cfg.supertrend.enabled, cfg.supertrend.period, cfg.supertrend.mult, cfg.ichimoku.enabled, cfg.ultosc.enabled,
+      cfg.typicalprice.enabled, cfg.medianprice.enabled, cfg.avgprice.enabled, cfg.envelopes.enabled, cfg.envelopes.period,
+    ]
   );
 
   const overlays = [];
@@ -565,6 +662,30 @@ export function AppShell({ onBack }) {
     overlays.push({ values: indicators.bbVals.lower, color: cfg.bb.color, dash: true });
   }
   if (cfg.vwap.enabled) overlays.push({ values: indicators.vwapVals, color: cfg.vwap.color });
+  // Batch 2 overlays
+  if (cfg.donchian.enabled) {
+    overlays.push({ values: indicators.donchianVals.upper, color: cfg.donchian.color, dash: true });
+    overlays.push({ values: indicators.donchianVals.lower, color: cfg.donchian.color, dash: true });
+  }
+  if (cfg.keltner.enabled) {
+    overlays.push({ values: indicators.keltnerVals.upper, color: cfg.keltner.color, dash: true });
+    overlays.push({ values: indicators.keltnerVals.lower, color: cfg.keltner.color, dash: true });
+  }
+  if (cfg.vwma.enabled) overlays.push({ values: indicators.vwmaVals, color: cfg.vwma.color });
+  if (cfg.supertrend.enabled) overlays.push({ values: indicators.supertrendVals.value, color: cfg.supertrend.color });
+  if (cfg.ichimoku.enabled) {
+    overlays.push({ values: indicators.ichimokuVals.tenkan, color: "#2ED9A0" });
+    overlays.push({ values: indicators.ichimokuVals.kijun, color: "#FF5C77" });
+    overlays.push({ values: indicators.ichimokuVals.senkouA, color: cfg.ichimoku.color, dash: true });
+    overlays.push({ values: indicators.ichimokuVals.senkouB, color: "#4FA9FF", dash: true });
+  }
+  if (cfg.typicalprice.enabled) overlays.push({ values: indicators.typicalPriceVals, color: cfg.typicalprice.color });
+  if (cfg.medianprice.enabled) overlays.push({ values: indicators.medianPriceVals, color: cfg.medianprice.color });
+  if (cfg.avgprice.enabled) overlays.push({ values: indicators.avgPriceVals, color: cfg.avgprice.color });
+  if (cfg.envelopes.enabled) {
+    overlays.push({ values: indicators.envelopesVals.upper, color: cfg.envelopes.color, dash: true });
+    overlays.push({ values: indicators.envelopesVals.lower, color: cfg.envelopes.color, dash: true });
+  }
 
   const indicatorPanes = [];
   if (cfg.rsi.enabled) {
@@ -600,8 +721,69 @@ export function AppShell({ onBack }) {
     });
   }
 
+  // Batch 2 panes
+  if (cfg.atr.enabled) indicatorPanes.push({ key: "atr", lines: [{ values: indicators.atrVals, color: cfg.atr.color }], stretchFactor: 1.2 });
+  if (cfg.adx.enabled) {
+    indicatorPanes.push({
+      key: "adx",
+      lines: [
+        { values: indicators.adxVals.adx, color: cfg.adx.color },
+        { values: indicators.adxVals.plusDI, color: "#2ED9A0" },
+        { values: indicators.adxVals.minusDI, color: "#FF5C77" },
+      ],
+      bounds: [0, 100],
+      stretchFactor: 1.4,
+    });
+  }
+  if (cfg.aroon.enabled) {
+    indicatorPanes.push({
+      key: "aroon",
+      lines: [
+        { values: indicators.aroonVals.up, color: "#2ED9A0" },
+        { values: indicators.aroonVals.down, color: "#FF5C77" },
+      ],
+      bounds: [0, 100],
+      stretchFactor: 1.4,
+    });
+  }
+  if (cfg.stoch.enabled) {
+    indicatorPanes.push({
+      key: "stoch",
+      lines: [
+        { values: indicators.stochVals.k, color: cfg.stoch.color },
+        { values: indicators.stochVals.d, color: "#F5B700" },
+      ],
+      bounds: [0, 100],
+      refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }],
+      stretchFactor: 1.4,
+    });
+  }
+  if (cfg.cci.enabled) indicatorPanes.push({ key: "cci", lines: [{ values: indicators.cciVals, color: cfg.cci.color }], stretchFactor: 1.2 });
+  if (cfg.williamsr.enabled) indicatorPanes.push({ key: "williamsr", lines: [{ values: indicators.williamsRVals, color: cfg.williamsr.color }], bounds: [-100, 0], stretchFactor: 1.2 });
+  if (cfg.obv.enabled) indicatorPanes.push({ key: "obv", lines: [{ values: indicators.obvVals, color: cfg.obv.color }], stretchFactor: 1.2 });
+  if (cfg.mom.enabled) indicatorPanes.push({ key: "mom", lines: [{ values: indicators.momVals, color: cfg.mom.color }], stretchFactor: 1.2 });
+  if (cfg.roc.enabled) indicatorPanes.push({ key: "roc", lines: [{ values: indicators.rocVals, color: cfg.roc.color }], stretchFactor: 1.2 });
+  if (cfg.ao.enabled) indicatorPanes.push({ key: "ao", histogram: { values: indicators.aoVals, upColor: "#2ED9A055", downColor: "#FF5C7755" }, stretchFactor: 1.2 });
+  if (cfg.ac.enabled) indicatorPanes.push({ key: "ac", histogram: { values: indicators.acVals, upColor: "#2ED9A055", downColor: "#FF5C7755" }, stretchFactor: 1.2 });
+  if (cfg.stddev.enabled) indicatorPanes.push({ key: "stddev", lines: [{ values: indicators.stddevVals, color: cfg.stddev.color }], stretchFactor: 1.2 });
+  if (cfg.mfi.enabled) indicatorPanes.push({ key: "mfi", lines: [{ values: indicators.mfiVals, color: cfg.mfi.color }], bounds: [0, 100], refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }], stretchFactor: 1.4 });
+  if (cfg.cmf.enabled) indicatorPanes.push({ key: "cmf", lines: [{ values: indicators.cmfVals, color: cfg.cmf.color }], stretchFactor: 1.2 });
+  if (cfg.bop.enabled) indicatorPanes.push({ key: "bop", lines: [{ values: indicators.bopVals, color: cfg.bop.color }], stretchFactor: 1.2 });
+  if (cfg.trix.enabled) indicatorPanes.push({ key: "trix", lines: [{ values: indicators.trixVals, color: cfg.trix.color }], stretchFactor: 1.2 });
+  if (cfg.efi.enabled) indicatorPanes.push({ key: "efi", lines: [{ values: indicators.efiVals, color: cfg.efi.color }], stretchFactor: 1.2 });
+  if (cfg.ultosc.enabled) indicatorPanes.push({ key: "ultosc", lines: [{ values: indicators.ultoscVals, color: cfg.ultosc.color }], bounds: [0, 100], stretchFactor: 1.4 });
+
   const toggleIndicator = (key) => setIndicatorConfig((c) => ({ ...c, [key]: { ...c[key], enabled: !c[key].enabled } }));
   const updateIndicator = (key, next) => setIndicatorConfig((c) => ({ ...c, [key]: next }));
+
+  // Picker "add" semantics — force-enable rather than toggle, since picking
+  // an indicator from search should always turn it on, even if it's
+  // already enabled (re-selecting shouldn't silently turn it off).
+  const handlePickerSelect = (entry) => {
+    const key = CATALOG_ID_TO_DEF_KEY[entry.id];
+    if (!key) return; // shouldn't happen for implemented:true entries, but stay safe
+    setIndicatorConfig((c) => ({ ...c, [key]: { ...c[key], enabled: true } }));
+  };
 
   const selectDrawTool = (key) => {
     setPendingPoints([]);
@@ -746,10 +928,18 @@ export function AppShell({ onBack }) {
             ))}
           </div>
           <div style={{ width: 1, height: 18, background: "#1D232F" }} />
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {Object.entries(INDICATOR_DEFS).map(([key, def]) => (
-              <IndicatorChip key={key} indKey={key} def={def} cfg={indicatorConfig[key]} onToggle={toggleIndicator} onChange={updateIndicator} />
-            ))}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {Object.entries(INDICATOR_DEFS)
+              .filter(([key]) => indicatorConfig[key]?.enabled)
+              .map(([key, def]) => (
+                <IndicatorChip key={key} indKey={key} def={def} cfg={indicatorConfig[key]} onToggle={toggleIndicator} onChange={updateIndicator} />
+              ))}
+            <button
+              onClick={() => setPickerOpen(true)}
+              style={{ background: "transparent", color: "#8B93A3", border: "1px solid #232A38", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}
+            >
+              + Indicators
+            </button>
           </div>
         </div>
       </header>
@@ -864,6 +1054,7 @@ export function AppShell({ onBack }) {
       )}
 
       <AdSlot />
+      <IndicatorPicker open={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={handlePickerSelect} />
     </div>
   );
 }
