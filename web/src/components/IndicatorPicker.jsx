@@ -13,14 +13,34 @@ function loadFavorites() {
   }
 }
 
+// Category order/labels for the left sidebar — derived from the catalog's
+// own `category` field (already there for every entry), just given a
+// TradingView-like order instead of alphabetical.
+const CATEGORY_ORDER = [
+  "Moving Averages", "Oscillators", "Momentum", "Trend", "Volatility",
+  "Volume", "Price", "Statistics", "Market breadth",
+];
+
+function highlightMatch(label, query) {
+  if (!query) return label;
+  const idx = label.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return label;
+  return (
+    <>
+      {label.slice(0, idx)}
+      <b style={{ color: "#F5B700" }}>{label.slice(idx, idx + query.length)}</b>
+      {label.slice(idx + query.length)}
+    </>
+  );
+}
+
 // Standalone, self-contained — does not read or write any AppShell state.
 // Integration point: onSelect(catalogEntry) fires when the user picks an
-// `implemented: true` entry; wire it to add that indicator using the same
-// INDICATOR_DEFS pattern AppShell already uses (see INTEGRATION.md next to
-// this file for the exact snippet).
+// `implemented: true` entry.
 export function IndicatorPicker({ open, onClose, onSelect }) {
   const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState(loadFavorites);
+  const [activeSection, setActiveSection] = useState("favorites"); // "favorites" | a category name
 
   useEffect(() => {
     try {
@@ -30,31 +50,60 @@ export function IndicatorPicker({ open, onClose, onSelect }) {
     }
   }, [favorites]);
 
+  useEffect(() => {
+    if (open) { setQuery(""); setActiveSection("favorites"); }
+  }, [open]);
+
   const toggleFavorite = (id, e) => {
     e.stopPropagation();
     setFavorites((prev) => (prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]));
   };
 
-  const filtered = useMemo(() => {
+  const categories = useMemo(() => {
+    const present = new Set(INDICATOR_CATALOG.map((i) => i.category));
+    return CATEGORY_ORDER.filter((c) => present.has(c));
+  }, []);
+
+  // When searching, ignore the sidebar entirely and show every match,
+  // grouped by category with headers — matches how typing "Atr" in the
+  // real TradingView picker surfaces Technicals + Community sections at
+  // once rather than confining you to whichever tab was open.
+  const searchResults = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const matches = q ? INDICATOR_CATALOG.filter((i) => i.label.toLowerCase().includes(q)) : INDICATOR_CATALOG;
-    return [...matches].sort((a, b) => a.label.localeCompare(b.label));
+    if (!q) return null;
+    const matches = INDICATOR_CATALOG.filter((i) => i.label.toLowerCase().includes(q));
+    const grouped = {};
+    matches.forEach((m) => {
+      grouped[m.category] = grouped[m.category] || [];
+      grouped[m.category].push(m);
+    });
+    return grouped;
   }, [query]);
 
-  const favoriteEntries = INDICATOR_CATALOG.filter((i) => favorites.includes(i.id));
+  const sectionEntries = useMemo(() => {
+    if (activeSection === "favorites") {
+      return INDICATOR_CATALOG.filter((i) => favorites.includes(i.id)).sort((a, b) => a.label.localeCompare(b.label));
+    }
+    return INDICATOR_CATALOG.filter((i) => i.category === activeSection).sort((a, b) => a.label.localeCompare(b.label));
+  }, [activeSection, favorites]);
 
   if (!open) return null;
 
   return (
     <div
       onClick={onClose}
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "8vh" }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: "6vh" }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ background: "#131720", border: "1px solid #2A3140", borderRadius: 10, width: "min(480px, 92vw)", maxHeight: "76vh", display: "flex", flexDirection: "column", fontFamily: "'Manrope', sans-serif" }}
+        style={{ background: "#131720", border: "1px solid #2A3140", borderRadius: 10, width: "min(720px, 94vw)", maxHeight: "82vh", display: "flex", flexDirection: "column", fontFamily: "'Manrope', sans-serif" }}
       >
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid #1D232F" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderBottom: "1px solid #1D232F" }}>
+          <span style={{ fontSize: 14, color: "#E8EAED", fontWeight: 600 }}>Indicators</span>
+          <span onClick={onClose} style={{ cursor: "pointer", color: "#4A5063", fontSize: 16, padding: 4 }}>✕</span>
+        </div>
+
+        <div style={{ padding: "10px 16px", borderBottom: "1px solid #1D232F" }}>
           <input
             autoFocus
             value={query}
@@ -64,29 +113,61 @@ export function IndicatorPicker({ open, onClose, onSelect }) {
           />
         </div>
 
-        <div style={{ overflowY: "auto", padding: "6px 0" }}>
-          {!query && favoriteEntries.length > 0 && (
-            <>
-              <div style={{ padding: "8px 16px 4px", fontSize: 11, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>FAVORITES</div>
-              {favoriteEntries.map((entry) => (
-                <IndicatorRow key={entry.id} entry={entry} isFavorite onToggleFavorite={toggleFavorite} onSelect={onSelect} onClose={onClose} />
+        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          {/* Left sidebar — hidden while searching, matching the reference */}
+          {!query && (
+            <div style={{ width: 160, flexShrink: 0, borderRight: "1px solid #1D232F", padding: "10px 0", overflowY: "auto" }}>
+              <div style={{ padding: "4px 14px 6px", fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>PERSONAL</div>
+              <SidebarRow label="★ Favorites" active={activeSection === "favorites"} onClick={() => setActiveSection("favorites")} />
+              <div style={{ padding: "10px 14px 6px", fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>CATEGORIES</div>
+              {categories.map((c) => (
+                <SidebarRow key={c} label={c} active={activeSection === c} onClick={() => setActiveSection(c)} />
               ))}
-              <div style={{ height: 1, background: "#1D232F", margin: "6px 0" }} />
-            </>
+            </div>
           )}
 
-          {filtered.length === 0 && <div style={{ padding: "20px 16px", color: "#4A5063", fontSize: 13 }}>No indicators match "{query}"</div>}
-
-          {filtered.map((entry) => (
-            <IndicatorRow key={entry.id} entry={entry} isFavorite={favorites.includes(entry.id)} onToggleFavorite={toggleFavorite} onSelect={onSelect} onClose={onClose} />
-          ))}
+          <div style={{ flex: 1, overflowY: "auto", padding: "6px 0" }}>
+            {query ? (
+              searchResults && Object.keys(searchResults).length > 0 ? (
+                Object.entries(searchResults).map(([category, entries]) => (
+                  <div key={category}>
+                    <div style={{ padding: "8px 16px 4px", fontSize: 11, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1 }}>{category.toUpperCase()}</div>
+                    {entries.map((entry) => (
+                      <IndicatorRow key={entry.id} entry={entry} query={query} isFavorite={favorites.includes(entry.id)} onToggleFavorite={toggleFavorite} onSelect={onSelect} onClose={onClose} />
+                    ))}
+                  </div>
+                ))
+              ) : (
+                <div style={{ padding: "20px 16px", color: "#4A5063", fontSize: 13 }}>No indicators match "{query}"</div>
+              )
+            ) : sectionEntries.length === 0 ? (
+              <div style={{ padding: "20px 16px", color: "#4A5063", fontSize: 13 }}>
+                {activeSection === "favorites" ? "Star an indicator to add it here." : "Nothing in this category yet."}
+              </div>
+            ) : (
+              sectionEntries.map((entry) => (
+                <IndicatorRow key={entry.id} entry={entry} query="" isFavorite={favorites.includes(entry.id)} onToggleFavorite={toggleFavorite} onSelect={onSelect} onClose={onClose} />
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function IndicatorRow({ entry, isFavorite, onToggleFavorite, onSelect, onClose }) {
+function SidebarRow({ label, active, onClick }) {
+  return (
+    <div
+      onClick={onClick}
+      style={{ padding: "7px 14px", fontSize: 13, cursor: "pointer", color: active ? "#F5B700" : "#8B93A3", background: active ? "#F5B70014" : "transparent" }}
+    >
+      {label}
+    </div>
+  );
+}
+
+function IndicatorRow({ entry, query, isFavorite, onToggleFavorite, onSelect, onClose }) {
   return (
     <div
       onClick={() => {
@@ -104,7 +185,7 @@ function IndicatorRow({ entry, isFavorite, onToggleFavorite, onSelect, onClose }
       }}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-        <span style={{ fontSize: 13, color: "#E8EAED" }}>{entry.label}</span>
+        <span style={{ fontSize: 13, color: "#E8EAED" }}>{highlightMatch(entry.label, query)}</span>
         <span style={{ fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace" }}>
           {entry.category}
           {!entry.implemented && " · coming soon"}
