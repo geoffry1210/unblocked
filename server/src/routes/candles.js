@@ -14,16 +14,15 @@
 // pairs, but only a curated "core" set is actively relayed/stored at any
 // time (see services/pruner.js) — this is what keeps a free-tier Postgres
 // from filling up the way it did before. When someone requests a symbol
-// that isn't yet active, this route flips it on and kicks off a
-// background backfill so history starts populating. Known limitation:
-// live ticks for a freshly-activated symbol only start flowing once the
-// relay picks it up on its next restart (same restart-to-pick-up-changes
-// behavior symbolSync.js already documents) — historical candles are
-// available immediately as the backfill completes, though.
+// that isn't yet active, this route flips it on, kicks off a background
+// backfill so history starts populating, AND emits an activation event
+// (see services/activationBus.js) so the live relay subscribes it
+// immediately rather than only picking it up on the next restart.
 
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import { runBackfill } from "../services/backfillRunner.js";
+import { emitActivation } from "../services/activationBus.js";
 
 const router = Router();
 
@@ -61,7 +60,13 @@ router.get("/", async (req, res) => {
         `UPDATE symbols SET active = true WHERE exchange = $1 AND market_type = $2 AND pair = $3`,
         [exchange, marketType, pair]
       );
-      console.log(`On-demand activation: ${exchange}/${marketType} ${pair} — starting background backfill`);
+      console.log(`On-demand activation: ${exchange}/${marketType} ${pair} — starting background backfill + live subscribe`);
+
+      // Live subscribe — the relay (if running for this exchange/marketType,
+      // which it always is now, see exchanges/index.js) picks this up
+      // immediately instead of waiting for a restart.
+      emitActivation({ exchange, marketType, symbol: pair });
+
       // Fire-and-forget — the route responds immediately with whatever
       // candles exist right now (likely none yet), and the frontend's
       // existing "no candles yet" state covers the gap gracefully while
