@@ -1,53 +1,52 @@
-// Unblocked server — entry point
+// Exchange relay registry. Each adapter owns its own connection, reconnect,
+// and candle-write logic — this file just starts whichever exchange/market
+// type combos have ever had symbols discovered for them (see
+// services/symbolSync.js), so adding a new exchange×market_type pair is:
+// write the adapter file, register it below, run a symbol sync. No other
+// file needs to change.
+//
+// Deliberately NOT filtered to WHERE active = true: under the on-demand
+// activation model (routes/candles.js, services/pruner.js), a combo can
+// have zero currently-active symbols yet still need a relay running and
+// ready — the moment someone views a pair in that combo, activationBus.js
+// needs an already-listening relay to subscribe it live. Each adapter's
+// shard group handles starting with zero symbols fine (see
+// createShardGroup in sharding.js), so there's no real cost to always
+// starting every known combo.
 
-import "dotenv/config";
-import express from "express";
-import cors from "cors";
-import { createServer } from "http";
+import { pool } from "../../db/pool.js";
+import { startBinanceRelay } from "./binance.js";
+import { startBybitRelay } from "./bybit.js";
+import { startBitunixRelay } from "./bitunix.js";
+import { startMexcRelay } from "./mexc.js";
+import { startWeexRelay } from "./weex.js";
 
-import { startAllRelays } from "./services/exchanges/index.js";
-import { attachWebSocketServer } from "./services/wsServer.js";
-import { startWhaleAlertPoller } from "./services/whaleAlertPoller.js";
-import candlesRouter from "./routes/candles.js";
-import symbolsRouter from "./routes/symbols.js";
-import adminBackfillRouter from "./routes/adminBackfill.js";
-import { pool } from "./db/pool.js";
+const ADAPTERS = {
+  binance: (marketType, ctx) => startBinanceRelay({ marketType, ...ctx }),
+  bybit: (marketType, ctx) => startBybitRelay({ marketType, ...ctx }),
+  bitunix: (_marketType, ctx) => startBitunixRelay(ctx), // perp-only adapter, ignores marketType
+  mexc: (_marketType, ctx) => startMexcRelay(ctx),
+  weex: (_marketType, ctx) => startWeexRelay(ctx),
+};
 
-const app = express();
-app.use(cors({ origin: process.env.WEB_ORIGIN }));
-app.use(express.json());
+export async function startAllRelays({ broadcastCandle }) {
+  const { rows } = await pool.query(
+    "SELECT DISTINCT exchange, market_type FROM symbols ORDER BY exchange, market_type"
+  );
 
-app.get("/health", (_req, res) => res.json({ ok: true }));
-app.use("/candles", candlesRouter);
-app.use("/symbols", symbolsRouter);
-app.use("/internal/backfill", adminBackfillRouter);
+  if (rows.length === 0) {
+    console.warn("No symbols found across any exchange — nothing to relay (run a symbol sync first)");
+    return;
+  }
 
-const server = createServer(app);
-
-// Attach the WS server first — it hands back broadcast functions the
-// exchange relays need to push live ticks to subscribed clients.
-const { broadcastCandle, broadcastWhaleEvent } = attachWebSocketServer(server);
-
-startAllRelays({ broadcastCandle }).catch((err) => {
-  console.error("Failed to start exchange relays", err);
-});
-
-// Poll CoinRadar's /api/whale/:ticker for each unique tracked ticker
-// (deduped across exchanges — whale events are on-chain/ticker-based, not
-// exchange-specific, so there's no reason to poll the same ticker twice
-// just because it's listed on both Binance and Bybit) and broadcast new
-// events to subscribed chart clients.
-pool
-  .query("SELECT DISTINCT pair FROM symbols WHERE active = true")
-  .then(({ rows }) => {
-    startWhaleAlertPoller({
-      symbols: rows.map((r) => r.pair),
-      broadcastWhaleEvent,
+  for (const { exchange, market_type: marketType } of rows) {
+    const start = ADAPTERS[exchange];
+    if (!start) {
+      console.warn(`No adapter registered for exchange "${exchange}" — skipping`);
+      continue;
+    }
+    start(marketType, { broadcastCandle }).catch((err) => {
+      console.error(`Failed to start ${exchange}/${marketType} relay`, err);
     });
-  })
-  .catch((err) => {
-    console.error("Failed to start whale alert poller", err);
-  });
-
-const port = process.env.PORT || 3001;
-server.listen(port, () => console.log(`Unblocked server listening on :${port}`));
+  }
+}

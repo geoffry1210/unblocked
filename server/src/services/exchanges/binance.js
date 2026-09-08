@@ -4,19 +4,21 @@
 // WebSocket host differs (spot: stream.binance.com, perp: fstream.binance.com).
 // Verified against Binance's public API docs.
 //
-// IMPORTANT: streams are subscribed via the SUBSCRIBE method sent after
-// connecting, NOT embedded in the connection URL. The URL-embedded
-// combined-stream style (.../stream?streams=a/b/c) works fine for a
-// handful of symbols but produces a URL far too long to open once the
-// symbol list grows into the hundreds (every USDT/USD/USDC pair) — this
-// used to be how it worked here and quietly broke at that scale. Sharding
-// (see ../sharding.js) further splits large symbol lists across several
-// connections so no single connection's subscription count gets close to
-// Binance's documented per-connection ceiling.
+// Streams are subscribed via the SUBSCRIBE method sent after connecting,
+// not embedded in the connection URL — the URL-embedded style breaks once
+// the symbol list grows into the hundreds (URL too long to open).
+//
+// Sharded across multiple connections (see ../sharding.js) so no single
+// connection's subscription count gets close to Binance's per-connection
+// ceiling, and symbols can be added live post-startup — see
+// registerActivationHandler below, which is what makes on-demand-activated
+// symbols (routes/candles.js) start streaming immediately instead of only
+// after the next full restart.
 
 import WebSocket from "ws";
 import { upsertCandle, getActiveSymbols } from "../../db/candles.js";
-import { startSharded } from "./sharding.js";
+import { createShardGroup, addSymbolToShardGroup } from "./sharding.js";
+import { onActivation } from "../activationBus.js";
 
 const TIMEFRAMES = ["1m", "15m", "1h", "4h", "1d"];
 const RECONNECT_DELAY_MS = 5000;
@@ -26,31 +28,44 @@ const HOSTS = {
   perp: "wss://fstream.binance.com/stream",
 };
 
+function buildSubscribeForSymbol(symbol) {
+  const streams = TIMEFRAMES.map((tf) => `${symbol.toLowerCase()}@kline_${tf}`);
+  return { method: "SUBSCRIBE", params: streams, id: Date.now() };
+}
+
 export async function startBinanceRelay({ marketType, broadcastCandle }) {
   const symbols = await getActiveSymbols("binance", marketType);
   if (symbols.length === 0) {
-    console.warn(`No active binance/${marketType} symbols — skipping (seed the symbols table to enable)`);
-    return;
+    console.warn(`No active binance/${marketType} symbols at startup — relay idle until one activates on-demand`);
   }
-  startSharded(symbols, TIMEFRAMES.length, (shardSymbols, shardIndex) => connect(marketType, shardSymbols, shardIndex, broadcastCandle), {
-    label: `Binance ${marketType} relay`,
+
+  const group = createShardGroup(
+    symbols,
+    TIMEFRAMES.length,
+    (shard, shardIndex) => connect(marketType, shard, shardIndex, broadcastCandle),
+    { label: `Binance ${marketType} relay` }
+  );
+
+  // Symbols activated after startup (someone views a pair that wasn't
+  // already active) get subscribed live instead of waiting for a restart.
+  onActivation(({ exchange, marketType: mt, symbol }) => {
+    if (exchange === "binance" && mt === marketType) {
+      addSymbolToShardGroup(group, symbol, buildSubscribeForSymbol);
+    }
   });
+
+  return group;
 }
 
-function connect(marketType, symbols, shardIndex, broadcastCandle) {
+function connect(marketType, shard, shardIndex, broadcastCandle) {
   const ws = new WebSocket(HOSTS[marketType]);
 
   ws.on("open", () => {
-    console.log(`Binance ${marketType} relay [shard ${shardIndex}] connected — ${symbols.length} symbols x ${TIMEFRAMES.length} timeframes`);
-    const streams = [];
-    for (const symbol of symbols) {
-      for (const tf of TIMEFRAMES) {
-        streams.push(`${symbol.toLowerCase()}@kline_${tf}`);
-      }
-    }
-    // Binance accepts a single SUBSCRIBE call with all params, but chunk
-    // anyway to stay well clear of any per-message size/rate quirks —
-    // matches the same defensive chunking Bybit/Bitunix already use.
+    shard.ws = ws;
+    console.log(`Binance ${marketType} relay [shard ${shardIndex}] connected — ${shard.symbols.length} symbols x ${TIMEFRAMES.length} timeframes`);
+    // Read shard.symbols fresh (not a captured snapshot) so symbols added
+    // live before a reconnect get re-subscribed automatically.
+    const streams = shard.symbols.flatMap((symbol) => TIMEFRAMES.map((tf) => `${symbol.toLowerCase()}@kline_${tf}`));
     let id = 1;
     for (let i = 0; i < streams.length; i += 50) {
       ws.send(JSON.stringify({ method: "SUBSCRIBE", params: streams.slice(i, i + 50), id: id++ }));
@@ -83,8 +98,9 @@ function connect(marketType, symbols, shardIndex, broadcastCandle) {
   });
 
   ws.on("close", () => {
+    shard.ws = null;
     console.warn(`Binance ${marketType} relay [shard ${shardIndex}] disconnected — reconnecting in ${RECONNECT_DELAY_MS}ms`);
-    setTimeout(() => connect(marketType, symbols, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
+    setTimeout(() => connect(marketType, shard, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
   });
 
   ws.on("error", (err) => {

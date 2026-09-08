@@ -8,18 +8,17 @@
 // boundaries and close detection are therefore INFERRED here (bucket =
 // ts floored to the interval), not exchange-confirmed. A candle is
 // persisted once we observe the *next* bucket starting, meaning writes
-// lag the real close by up to ~500ms (their push interval). This is a
-// reasonable heuristic, not a guarantee — worth knowing if exact candle
-// close timing ever matters here.
+// lag the real close by up to ~500ms (their push interval).
 //
-// Sharded across multiple connections once the symbol list grows large
-// (see ../sharding.js) — see binance.js's comment for the general
-// rationale; applies equally here now that Bitunix pairs aren't limited
-// to a small curated list.
+// Sharded across multiple connections (see ../sharding.js), with symbols
+// addable live post-startup — see registerActivationHandler below, which
+// is what makes on-demand-activated symbols (routes/candles.js) start
+// streaming immediately instead of only after the next full restart.
 
 import WebSocket from "ws";
 import { upsertCandle, getActiveSymbols } from "../../db/candles.js";
-import { startSharded } from "./sharding.js";
+import { createShardGroup, addSymbolToShardGroup } from "./sharding.js";
+import { onActivation } from "../activationBus.js";
 
 const RECONNECT_DELAY_MS = 5000;
 const PING_INTERVAL_MS = 20000;
@@ -30,19 +29,34 @@ const CHANNEL_TO_TF = Object.fromEntries(Object.entries(TF_TO_CHANNEL).map(([tf,
 const TF_TO_MS = { "1m": 60_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000 };
 const TIMEFRAMES = Object.keys(TF_TO_CHANNEL);
 
+function buildSubscribeForSymbol(symbol) {
+  return { op: "subscribe", args: TIMEFRAMES.map((tf) => ({ symbol, ch: TF_TO_CHANNEL[tf] })) };
+}
+
 export async function startBitunixRelay({ broadcastCandle }) {
   const marketType = "perp";
   const symbols = await getActiveSymbols("bitunix", marketType);
   if (symbols.length === 0) {
-    console.warn("No active bitunix/perp symbols — skipping (seed the symbols table to enable)");
-    return;
+    console.warn("No active bitunix/perp symbols at startup — relay idle until one activates on-demand");
   }
-  startSharded(symbols, TIMEFRAMES.length, (shardSymbols, shardIndex) => connect(shardSymbols, shardIndex, broadcastCandle), {
-    label: "Bitunix perp relay",
+
+  const group = createShardGroup(
+    symbols,
+    TIMEFRAMES.length,
+    (shard, shardIndex) => connect(shard, shardIndex, broadcastCandle),
+    { label: "Bitunix perp relay" }
+  );
+
+  onActivation(({ exchange, marketType: mt, symbol }) => {
+    if (exchange === "bitunix" && mt === marketType) {
+      addSymbolToShardGroup(group, symbol, buildSubscribeForSymbol);
+    }
   });
+
+  return group;
 }
 
-function connect(symbols, shardIndex, broadcastCandle) {
+function connect(shard, shardIndex, broadcastCandle) {
   const ws = new WebSocket(WS_URL);
   let pingTimer;
   // key `${symbol}:${tf}` -> last seen {bucket, candle}, so we can detect
@@ -50,13 +64,9 @@ function connect(symbols, shardIndex, broadcastCandle) {
   const lastSeen = new Map();
 
   ws.on("open", () => {
-    console.log(`Bitunix perp relay [shard ${shardIndex}] connected — ${symbols.length} symbols x ${TIMEFRAMES.length} timeframes`);
-    const args = [];
-    for (const symbol of symbols) {
-      for (const tf of TIMEFRAMES) {
-        args.push({ symbol, ch: TF_TO_CHANNEL[tf] });
-      }
-    }
+    shard.ws = ws;
+    console.log(`Bitunix perp relay [shard ${shardIndex}] connected — ${shard.symbols.length} symbols x ${TIMEFRAMES.length} timeframes`);
+    const args = shard.symbols.flatMap((symbol) => TIMEFRAMES.map((tf) => ({ symbol, ch: TF_TO_CHANNEL[tf] })));
     for (let i = 0; i < args.length; i += 50) {
       ws.send(JSON.stringify({ op: "subscribe", args: args.slice(i, i + 50) }));
     }
@@ -96,9 +106,10 @@ function connect(symbols, shardIndex, broadcastCandle) {
   });
 
   ws.on("close", () => {
+    shard.ws = null;
     clearInterval(pingTimer);
     console.warn(`Bitunix perp relay [shard ${shardIndex}] disconnected — reconnecting in ${RECONNECT_DELAY_MS}ms`);
-    setTimeout(() => connect(symbols, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
+    setTimeout(() => connect(shard, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
   });
 
   ws.on("error", (err) => {

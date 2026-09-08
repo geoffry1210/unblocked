@@ -4,14 +4,15 @@
 // Bybit's kline interval strings differ from Binance's ("60" not "1h",
 // "D" not "1d") — TF_MAP handles the translation both ways.
 //
-// Sharded across multiple connections once the symbol list grows large
-// (see ../sharding.js) — a single connection carrying subscriptions for
-// hundreds of symbols risks exceeding Bybit's per-connection limits even
-// though individual subscribe messages are already chunked below.
+// Sharded across multiple connections (see ../sharding.js), with symbols
+// addable live post-startup — see registerActivationHandler below, which
+// is what makes on-demand-activated symbols (routes/candles.js) start
+// streaming immediately instead of only after the next full restart.
 
 import WebSocket from "ws";
 import { upsertCandle, getActiveSymbols } from "../../db/candles.js";
-import { startSharded } from "./sharding.js";
+import { createShardGroup, addSymbolToShardGroup } from "./sharding.js";
+import { onActivation } from "../activationBus.js";
 
 const RECONNECT_DELAY_MS = 5000;
 const PING_INTERVAL_MS = 20000;
@@ -26,30 +27,41 @@ const TF_TO_BYBIT = { "1m": "1", "15m": "15", "1h": "60", "4h": "240", "1d": "D"
 const BYBIT_TO_TF = Object.fromEntries(Object.entries(TF_TO_BYBIT).map(([tf, b]) => [b, tf]));
 const TIMEFRAMES = Object.keys(TF_TO_BYBIT);
 
+function buildSubscribeForSymbol(symbol) {
+  const args = TIMEFRAMES.map((tf) => `kline.${TF_TO_BYBIT[tf]}.${symbol}`);
+  return { op: "subscribe", args };
+}
+
 export async function startBybitRelay({ marketType, broadcastCandle }) {
   const symbols = await getActiveSymbols("bybit", marketType);
   if (symbols.length === 0) {
-    console.warn(`No active bybit/${marketType} symbols — skipping (seed the symbols table to enable)`);
-    return;
+    console.warn(`No active bybit/${marketType} symbols at startup — relay idle until one activates on-demand`);
   }
-  startSharded(symbols, TIMEFRAMES.length, (shardSymbols, shardIndex) => connect(marketType, shardSymbols, shardIndex, broadcastCandle), {
-    label: `Bybit ${marketType} relay`,
+
+  const group = createShardGroup(
+    symbols,
+    TIMEFRAMES.length,
+    (shard, shardIndex) => connect(marketType, shard, shardIndex, broadcastCandle),
+    { label: `Bybit ${marketType} relay` }
+  );
+
+  onActivation(({ exchange, marketType: mt, symbol }) => {
+    if (exchange === "bybit" && mt === marketType) {
+      addSymbolToShardGroup(group, symbol, buildSubscribeForSymbol);
+    }
   });
+
+  return group;
 }
 
-function connect(marketType, symbols, shardIndex, broadcastCandle) {
+function connect(marketType, shard, shardIndex, broadcastCandle) {
   const ws = new WebSocket(HOSTS[marketType]);
   let pingTimer;
 
   ws.on("open", () => {
-    console.log(`Bybit ${marketType} relay [shard ${shardIndex}] connected — ${symbols.length} symbols x ${TIMEFRAMES.length} timeframes`);
-    const args = [];
-    for (const symbol of symbols) {
-      for (const tf of TIMEFRAMES) {
-        args.push(`kline.${TF_TO_BYBIT[tf]}.${symbol}`);
-      }
-    }
-    // Bybit caps args per subscribe message in practice — chunk to be safe.
+    shard.ws = ws;
+    console.log(`Bybit ${marketType} relay [shard ${shardIndex}] connected — ${shard.symbols.length} symbols x ${TIMEFRAMES.length} timeframes`);
+    const args = shard.symbols.flatMap((symbol) => TIMEFRAMES.map((tf) => `kline.${TF_TO_BYBIT[tf]}.${symbol}`));
     for (let i = 0; i < args.length; i += 50) {
       ws.send(JSON.stringify({ op: "subscribe", args: args.slice(i, i + 50) }));
     }
@@ -86,9 +98,10 @@ function connect(marketType, symbols, shardIndex, broadcastCandle) {
   });
 
   ws.on("close", () => {
+    shard.ws = null;
     clearInterval(pingTimer);
     console.warn(`Bybit ${marketType} relay [shard ${shardIndex}] disconnected — reconnecting in ${RECONNECT_DELAY_MS}ms`);
-    setTimeout(() => connect(marketType, symbols, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
+    setTimeout(() => connect(marketType, shard, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
   });
 
   ws.on("error", (err) => {
