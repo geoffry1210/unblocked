@@ -9,6 +9,7 @@ import {
   elderForceIndex, superTrend, ichimoku, ultimateOscillator, typicalPrice, medianPrice,
   averagePrice, envelopes,
 } from "../lib/indicators.js";
+import * as batch3 from "../lib/indicatorsBatch3.js";
 import { TradingChart } from "./Chart.jsx";
 import { AdSlot } from "./AdSlot.jsx";
 import { IndicatorPicker } from "./IndicatorPicker.jsx";
@@ -55,6 +56,72 @@ const INDICATOR_DEFS = {
   avgprice: { label: "Average Price", type: "overlay", defaults: { enabled: false, color: "#4FA9FF" } },
   envelopes: { label: "Envelopes", type: "overlay", defaults: { enabled: false, period: 20, color: "#7C5CFF" } },
 };
+
+// Batch 3 — the remaining 50 requested indicators (see indicatorsBatch3.js
+// for the math). With 81 total indicators now, hand-writing another 50
+// if-blocks like the ones above would be unmaintainable, so this is a
+// small generic registry instead: each entry knows how to compute itself
+// and shape its own result into overlay/pane form. AppShell just loops
+// over it once (see the `batch3Overlays`/`batch3Panes` block below) —
+// the original 7 + Batch 2's 24 stay exactly as hand-wired above,
+// untouched, to avoid any risk to what's already working.
+const BATCH3_REGISTRY = [
+  { key: "adl", label: "ADL", type: "pane", defaults: { enabled: false, color: "#4FA9FF" }, compute: (c) => batch3.adl(c), toPane: (r) => ({ lines: [{ values: r, color: "#4FA9FF" }] }) },
+  { key: "alma", label: "ALMA", type: "overlay", defaults: { enabled: false, period: 9, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.alma(cl, cfg.period), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
+  { key: "bbpb", label: "BB %B", type: "pane", defaults: { enabled: false, period: 20, mult: 2, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.bbPercentB(cl, cfg.period, cfg.mult), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 1], refLines: [{ value: 0, color: "#2A3140" }, { value: 1, color: "#2A3140" }] }) },
+  { key: "bbw", label: "BB Width", type: "pane", defaults: { enabled: false, period: 20, mult: 2, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.bbWidth(cl, cfg.period, cfg.mult), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "chosc", label: "Chaikin Osc", type: "pane", defaults: { enabled: false, fast: 3, slow: 10, color: "#2ED9A0" }, compute: (c, cl, cfg) => batch3.chaikinOscillator(c, cfg.fast, cfg.slow), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "chvol", label: "Chaikin Vol", type: "pane", defaults: { enabled: false, period: 10, color: "#FF9F40" }, compute: (c, cl, cfg) => batch3.chaikinVolatility(c, cfg.period, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "cks", label: "Chande Kroll", type: "overlay", defaults: { enabled: false, period: 10, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.chandeKrollStop(c, cfg.period), toOverlay: (r) => [{ values: r.highStop, color: "#FF5C77", dash: true }, { values: r.lowStop, color: "#2ED9A0", dash: true }] },
+  { key: "cmo", label: "Chande Mom Osc", type: "pane", defaults: { enabled: false, period: 9, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.chandeMomentumOscillator(cl, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [-100, 100] }) },
+  { key: "chopzone", label: "Chop Zone", type: "pane", defaults: { enabled: false, period: 14, color: "#4FA9FF" }, compute: (c, cl, cfg) => batch3.chopZone(c, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 100] }) },
+  { key: "chopidx", label: "Choppiness", type: "pane", defaults: { enabled: false, period: 14, color: "#FF9F40" }, compute: (c, cl, cfg) => batch3.choppinessIndex(c, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 100] }) },
+  { key: "crsi", label: "Connors RSI", type: "pane", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c, cl) => batch3.connorsRsi(cl), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 100], refLines: [{ value: 30, color: "#2A3140" }, { value: 70, color: "#2A3140" }] }) },
+  { key: "coppock", label: "Coppock", type: "pane", defaults: { enabled: false, color: "#F5B700" }, compute: (c, cl) => batch3.coppockCurve(cl), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "dpo", label: "DPO", type: "pane", defaults: { enabled: false, period: 14, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.detrendedPriceOscillator(cl, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "dema", label: "DEMA", type: "overlay", defaults: { enabled: false, period: 20, color: "#FF5C77" }, compute: (c, cl, cfg) => batch3.dema(cl, cfg.period), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
+  { key: "eom", label: "Ease of Movement", type: "pane", defaults: { enabled: false, period: 14, color: "#4FA9FF" }, compute: (c, cl, cfg) => batch3.easeOfMovement(c, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "emacross", label: "EMA Cross", type: "overlay", defaults: { enabled: false, fast: 9, slow: 21, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.emaCross(cl, cfg.fast, cfg.slow), toOverlay: (r) => [{ values: r.fast, color: "#F5B700" }, { values: r.slow, color: "#2ED9A0" }] },
+  { key: "fisher", label: "Fisher Transform", type: "pane", defaults: { enabled: false, period: 9, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.fisherTransform(c, cfg.period), toPane: (r) => ({ lines: [{ values: r.fisher, color: "#7C5CFF" }, { values: r.signal, color: "#F5B700" }] }) },
+  { key: "gmma", label: "Guppy MMA", type: "overlay", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c, cl) => batch3.guppyMma(cl), toOverlay: (r) => [...r.short.map((v) => ({ values: v, color: "#2ED9A0" })), ...r.long.map((v) => ({ values: v, color: "#FF5C77" }))] },
+  { key: "hv", label: "Historical Vol", type: "pane", defaults: { enabled: false, period: 10, color: "#FF9F40" }, compute: (c, cl, cfg) => batch3.historicalVolatility(cl, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "hma", label: "Hull MA", type: "overlay", defaults: { enabled: false, period: 20, color: "#4FA9FF" }, compute: (c, cl, cfg) => batch3.hma(cl, cfg.period), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
+  { key: "klinger", label: "Klinger", type: "pane", defaults: { enabled: false, fast: 34, slow: 55, signal: 13, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.klingerOscillator(c, cfg.fast, cfg.slow, cfg.signal), toPane: (r) => ({ lines: [{ values: r.kvo, color: "#F5B700" }, { values: r.signal, color: "#7C5CFF" }] }) },
+  { key: "kst", label: "KST", type: "pane", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c, cl) => batch3.kst(cl), toPane: (r) => ({ lines: [{ values: r.kst, color: "#2ED9A0" }, { values: r.signal, color: "#F5B700" }] }) },
+  { key: "lsma", label: "LSMA", type: "overlay", defaults: { enabled: false, period: 25, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.lsma(cl, cfg.period), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
+  { key: "lrc", label: "Lin Reg Curve", type: "overlay", defaults: { enabled: false, period: 14, color: "#FF9F40" }, compute: (c, cl, cfg) => batch3.linearRegressionCurve(cl, cfg.period), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
+  { key: "lrs", label: "Lin Reg Slope", type: "pane", defaults: { enabled: false, period: 14, color: "#4FA9FF" }, compute: (c, cl, cfg) => batch3.linearRegressionSlope(cl, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "macross", label: "MA Cross", type: "overlay", defaults: { enabled: false, fast: 9, slow: 21, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.maCross(cl, cfg.fast, cfg.slow), toOverlay: (r) => [{ values: r.fast, color: "#F5B700" }, { values: r.slow, color: "#2ED9A0" }] },
+  { key: "maemacross", label: "MA+EMA Cross", type: "overlay", defaults: { enabled: false, period: 9, period2: 21, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.maWithEmaCross(cl, cfg.period, cfg.period2), toOverlay: (r) => [{ values: r.ma, color: "#F5B700" }, { values: r.ema, color: "#2ED9A0" }] },
+  { key: "massindex", label: "Mass Index", type: "pane", defaults: { enabled: false, color: "#FF5C77" }, compute: (c) => batch3.massIndex(c), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "mcginley", label: "McGinley Dyn", type: "overlay", defaults: { enabled: false, period: 14, color: "#4FA9FF" }, compute: (c, cl, cfg) => batch3.mcginleyDynamic(cl, cfg.period), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
+  { key: "machannel", label: "MA Channel", type: "overlay", defaults: { enabled: false, period: 20, mult: 2, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.movingAverageChannel(c, cfg.period, cfg.mult), toOverlay: (r, cfg) => [{ values: r.upper, color: cfg.color, dash: true }, { values: r.lower, color: cfg.color, dash: true }] },
+  { key: "netvol", label: "Net Volume", type: "pane", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c) => batch3.netVolume(c), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "psar", label: "Parabolic SAR", type: "overlay", defaults: { enabled: false, step: 0.02, maxStep: 0.2, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.parabolicSar(c, cfg.step, cfg.maxStep), toOverlay: (r, cfg) => [{ values: r, color: cfg.color, dotted: true }] },
+  { key: "pivots", label: "Pivot Points", type: "overlay", defaults: { enabled: false, color: "#4FA9FF" }, compute: (c) => batch3.pivotPointsStandard(c), toOverlay: (r) => [{ values: r.pivot, color: "#8B93A3" }, { values: r.r1, color: "#FF5C77", dash: true }, { values: r.s1, color: "#2ED9A0", dash: true }] },
+  { key: "pricechannel", label: "Price Channel", type: "overlay", defaults: { enabled: false, period: 20, color: "#FF9F40" }, compute: (c, cl, cfg) => donchianChannels(c, cfg.period), toOverlay: (r, cfg) => [{ values: r.upper, color: cfg.color, dash: true }, { values: r.lower, color: cfg.color, dash: true }] },
+  { key: "priceosc", label: "Price Osc", type: "pane", defaults: { enabled: false, fast: 10, slow: 21, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.priceOscillator(cl, cfg.fast, cfg.slow), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "pvt", label: "Price Vol Trend", type: "pane", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c) => batch3.priceVolumeTrend(c), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "rvi", label: "Rel Vigor Idx", type: "pane", defaults: { enabled: false, period: 10, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.relativeVigorIndex(c, cfg.period), toPane: (r) => ({ lines: [{ values: r.rvi, color: "#F5B700" }, { values: r.signal, color: "#7C5CFF" }] }) },
+  { key: "rvolidx", label: "Rel Volatility", type: "pane", defaults: { enabled: false, period: 10, color: "#4FA9FF" }, compute: (c, cl, cfg) => batch3.relativeVolatilityIndex(cl, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 100] }) },
+  { key: "stderr", label: "Std Error", type: "pane", defaults: { enabled: false, period: 20, color: "#FF9F40" }, compute: (c, cl, cfg) => batch3.standardError(cl, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "stderrbands", label: "Std Error Bands", type: "overlay", defaults: { enabled: false, period: 20, mult: 2, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.standardErrorBands(cl, cfg.period, cfg.mult), toOverlay: (r, cfg) => [{ values: r.upper, color: cfg.color, dash: true }, { values: r.lower, color: cfg.color, dash: true }, { values: r.mid, color: cfg.color }] },
+  { key: "smiergodic", label: "SMI Ergodic", type: "pane", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c) => batch3.smiErgodic(c), toPane: (r) => ({ lines: [{ values: r.smi, color: "#2ED9A0" }, { values: r.signal, color: "#F5B700" }] }) },
+  { key: "smma", label: "Smoothed MA", type: "overlay", defaults: { enabled: false, period: 14, color: "#4FA9FF" }, compute: (c, cl, cfg) => batch3.smma(cl, cfg.period), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
+  { key: "tema", label: "Triple EMA", type: "overlay", defaults: { enabled: false, period: 20, color: "#FF5C77" }, compute: (c, cl, cfg) => batch3.tema(cl, cfg.period), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
+  { key: "tsi", label: "True Strength", type: "pane", defaults: { enabled: false, color: "#F5B700" }, compute: (c, cl) => batch3.trueStrengthIndex(cl), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "volc2c", label: "Vol Close-Close", type: "pane", defaults: { enabled: false, period: 10, color: "#2ED9A0" }, compute: (c, cl, cfg) => batch3.volatilityCloseToClose(cl, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "volzeroc2c", label: "Vol Zero Trend", type: "pane", defaults: { enabled: false, period: 10, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.volatilityZeroTrendCloseToClose(cl, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "volohlc", label: "Vol O-H-L-C", type: "pane", defaults: { enabled: false, period: 10, color: "#FF9F40" }, compute: (c, cl, cfg) => batch3.volatilityOHLC(c, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "volosc", label: "Volume Osc", type: "pane", defaults: { enabled: false, fast: 5, slow: 10, color: "#4FA9FF" }, compute: (c, cl, cfg) => batch3.volumeOscillator(c, cfg.fast, cfg.slow), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
+  { key: "vortex", label: "Vortex", type: "pane", defaults: { enabled: false, period: 14, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.vortexIndicator(c, cfg.period), toPane: (r) => ({ lines: [{ values: r.viPlus, color: "#2ED9A0" }, { values: r.viMinus, color: "#FF5C77" }] }) },
+  { key: "alligator", label: "Alligator", type: "overlay", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c) => batch3.williamsAlligator(c), toOverlay: (r) => [{ values: r.jaw, color: "#4FA9FF" }, { values: r.teeth, color: "#FF5C77" }, { values: r.lips, color: "#2ED9A0" }] },
+  { key: "fractal", label: "Fractal", type: "overlay", defaults: { enabled: false, color: "#F5B700" }, compute: (c) => batch3.williamsFractal(c), toOverlay: (r) => [{ values: r.up, color: "#FF5C77" }, { values: r.down, color: "#2ED9A0" }] },
+  { key: "zigzag", label: "Zig Zag", type: "overlay", defaults: { enabled: false, deviation: 5, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.zigZag(c, cfg.deviation), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
+];
+BATCH3_REGISTRY.forEach((entry) => {
+  INDICATOR_DEFS[entry.key] = { label: entry.label, type: entry.type, defaults: entry.defaults };
+});
 
 const COLOR_PRESETS = ["#F5B700", "#2ED9A0", "#7C5CFF", "#FF5C77", "#FF9F40", "#4FA9FF"];
 
@@ -153,6 +220,9 @@ const CATALOG_ID_TO_DEF_KEY = {
   stoch: "stoch", stochrsi: "stochrsi", supertrend: "supertrend", trix: "trix",
   typicalprice: "typicalprice", ultosc: "ultosc", vwap: "vwap", vwma: "vwma",
   williamsr: "williamsr",
+  // Batch 3 — registry keys were kept identical to their catalog ids, so
+  // this is just an identity map rather than 50 more manual pairs.
+  ...Object.fromEntries(BATCH3_REGISTRY.map((e) => [e.key, e.key])),
 };
 
 // Per-tool icons for the flyout grid — name shows only as a hover tooltip
@@ -772,6 +842,22 @@ export function AppShell({ onBack }) {
   if (cfg.trix.enabled) indicatorPanes.push({ key: "trix", lines: [{ values: indicators.trixVals, color: cfg.trix.color }], stretchFactor: 1.2 });
   if (cfg.efi.enabled) indicatorPanes.push({ key: "efi", lines: [{ values: indicators.efiVals, color: cfg.efi.color }], stretchFactor: 1.2 });
   if (cfg.ultosc.enabled) indicatorPanes.push({ key: "ultosc", lines: [{ values: indicators.ultoscVals, color: cfg.ultosc.color }], bounds: [0, 100], stretchFactor: 1.4 });
+
+  // Batch 3 — generic pass over the registry, only computing/rendering
+  // indicators the user actually turned on (same performance discipline
+  // as the hand-wired ones above; several of these, e.g. Guppy MMA's 12
+  // EMAs or Pivot Points, aren't free to compute on every render).
+  BATCH3_REGISTRY.forEach((entry) => {
+    const c = cfg[entry.key];
+    if (!c?.enabled || candles.length === 0) return;
+    const raw = entry.compute(candles, closes, c);
+    if (entry.type === "overlay") {
+      overlays.push(...entry.toOverlay(raw, c));
+    } else {
+      const paneConfig = entry.toPane(raw, c);
+      indicatorPanes.push({ key: entry.key, stretchFactor: 1.2, ...paneConfig });
+    }
+  });
 
   const toggleIndicator = (key) => setIndicatorConfig((c) => ({ ...c, [key]: { ...c[key], enabled: !c[key].enabled } }));
   const updateIndicator = (key, next) => setIndicatorConfig((c) => ({ ...c, [key]: next }));
