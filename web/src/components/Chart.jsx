@@ -5,6 +5,15 @@ const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 const fmt = (p) => (p < 10 ? p.toFixed(4) : p.toFixed(2));
 const toSeconds = (ms) => Math.floor(ms / 1000);
 
+// LightweightCharts' LineStyle enum: 0=Solid, 1=Dotted, 2=Dashed. Accepts
+// either the new `style` string field or the old boolean `dash` (kept for
+// backward compat with overlay/pane objects that only set dash:true).
+function toLineStyleEnum(line) {
+  if (line.style === "dotted") return 1;
+  if (line.style === "dashed" || line.dash) return 2;
+  return 0;
+}
+
 function toCandleData(candles) {
   const out = [];
   let last = -Infinity;
@@ -286,7 +295,7 @@ export function TradingChart({
     overlaySeriesRef.current = overlays.map((o) => {
       const s = chart.addSeries(
         LineSeries,
-        { color: o.color, lineWidth: 1, lineStyle: o.dash ? 2 : 0, lastValueVisible: false, priceLineVisible: false },
+        { color: o.color, lineWidth: o.width || 1, lineStyle: toLineStyleEnum(o), lastValueVisible: false, priceLineVisible: false },
         0
       );
       s.setData(toLineData(candles, o.values));
@@ -310,7 +319,7 @@ export function TradingChart({
       (pane.lines || []).forEach((line, lineIdx) => {
         const s = chart.addSeries(
           LineSeries,
-          { color: line.color, lineWidth: 1, lineStyle: line.dash ? 2 : 0, lastValueVisible: false, priceLineVisible: false },
+          { color: line.color, lineWidth: line.width || 1, lineStyle: toLineStyleEnum(line), lastValueVisible: false, priceLineVisible: false },
           paneIndex
         );
         s.setData(toLineData(candles, line.values));

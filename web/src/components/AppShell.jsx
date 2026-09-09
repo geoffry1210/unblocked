@@ -17,21 +17,21 @@ import { IndicatorPicker } from "./IndicatorPicker.jsx";
 // Each indicator now carries its own config (period, color, etc.), not just
 // an on/off flag — this is what makes the settings popover possible.
 const INDICATOR_DEFS = {
-  ma20: { label: "MA", type: "overlay", defaults: { enabled: true, period: 20, color: "#F5B700" } },
-  ema9: { label: "EMA", type: "overlay", defaults: { enabled: false, period: 9, color: "#2ED9A0" } },
-  bb: { label: "Bollinger", type: "overlay", defaults: { enabled: false, period: 20, mult: 2, color: "#7C5CFF" } },
-  vwap: { label: "VWAP", type: "overlay", defaults: { enabled: false, color: "#FF9F40" } },
-  rsi: { label: "RSI", type: "pane", defaults: { enabled: true, period: 14, color: "#7C5CFF" } },
-  macd: { label: "MACD", type: "pane", defaults: { enabled: false, fast: 12, slow: 26, signal: 9, color: "#F5B700" } },
-  stochrsi: { label: "Stoch RSI", type: "pane", defaults: { enabled: false, period: 14, smoothD: 3, color: "#2ED9A0" } },
+  ma20: { label: "MA", type: "overlay", defaults: { enabled: true, period: 20, color: "#2962FF" } },
+  ema9: { label: "EMA", type: "overlay", defaults: { enabled: false, period: 9, color: "#FF6D00" } },
+  bb: { label: "Bollinger", type: "overlay", defaults: { enabled: false, period: 20, mult: 2, color: "#2962FF" } },
+  vwap: { label: "VWAP", type: "overlay", defaults: { enabled: false, color: "#2962FF" } },
+  rsi: { label: "RSI", type: "pane", defaults: { enabled: true, period: 14, color: "#7E57C2" } },
+  macd: { label: "MACD", type: "pane", defaults: { enabled: false, fast: 12, slow: 26, signal: 9, color: "#2962FF" } },
+  stochrsi: { label: "Stoch RSI", type: "pane", defaults: { enabled: false, period: 14, smoothD: 3, color: "#2962FF" } },
 
   // Batch 2 — added via the indicator picker (see IndicatorPicker.jsx /
   // indicatorCatalog.js). All default to disabled since there are now 31
   // total; the picker's job is discovery, not pre-cluttering the toolbar.
-  atr: { label: "ATR", type: "pane", defaults: { enabled: false, period: 14, color: "#F5B700" } },
-  adx: { label: "ADX", type: "pane", defaults: { enabled: false, period: 14, color: "#7C5CFF" } },
+  atr: { label: "ATR", type: "pane", defaults: { enabled: false, period: 14, color: "#FF6D00" } },
+  adx: { label: "ADX", type: "pane", defaults: { enabled: false, period: 14, color: "#8B93A3" } },
   aroon: { label: "Aroon", type: "pane", defaults: { enabled: false, period: 14, color: "#2ED9A0" } },
-  stoch: { label: "Stochastic", type: "pane", defaults: { enabled: false, period: 14, smoothD: 3, color: "#2ED9A0" } },
+  stoch: { label: "Stochastic", type: "pane", defaults: { enabled: false, period: 14, smoothD: 3, color: "#2962FF" } },
   cci: { label: "CCI", type: "pane", defaults: { enabled: false, period: 20, color: "#F5B700" } },
   williamsr: { label: "Williams %R", type: "pane", defaults: { enabled: false, period: 14, color: "#FF5C77" } },
   obv: { label: "OBV", type: "pane", defaults: { enabled: false, color: "#4FA9FF" } },
@@ -49,7 +49,7 @@ const INDICATOR_DEFS = {
   trix: { label: "TRIX", type: "pane", defaults: { enabled: false, period: 15, color: "#F5B700" } },
   efi: { label: "Force Index", type: "pane", defaults: { enabled: false, period: 13, color: "#FF5C77" } },
   supertrend: { label: "SuperTrend", type: "overlay", defaults: { enabled: false, period: 10, mult: 3, color: "#2ED9A0" } },
-  ichimoku: { label: "Ichimoku", type: "overlay", defaults: { enabled: false, color: "#7C5CFF" } },
+  ichimoku: { label: "Ichimoku", type: "overlay", defaults: { enabled: false, color: "#2ED9A0" } },
   ultosc: { label: "Ultimate Osc", type: "pane", defaults: { enabled: false, color: "#F5B700" } },
   typicalprice: { label: "Typical Price", type: "overlay", defaults: { enabled: false, color: "#4FA9FF" } },
   medianprice: { label: "Median Price", type: "overlay", defaults: { enabled: false, color: "#4FA9FF" } },
@@ -291,7 +291,10 @@ function loadJSON(key, fallback) {
 function defaultIndicatorConfig() {
   const cfg = {};
   Object.entries(INDICATOR_DEFS).forEach(([key, def]) => {
-    cfg[key] = { ...def.defaults };
+    // lineWidth/lineStyle apply generically to every indicator (see `st()`
+    // in AppShell's render body) — default here rather than in all 83+
+    // individual `defaults` objects; a def can still override them.
+    cfg[key] = { lineWidth: 1, lineStyle: "solid", ...def.defaults };
   });
   return cfg;
 }
@@ -427,8 +430,25 @@ function SymbolSearch({ symbols, activeLabel, onSelect }) {
 }
 
 // Small popover for adjusting a single indicator's period(s) and color.
+const LINE_WIDTHS = [1, 2, 3, 4];
+const LINE_STYLES = [
+  { value: "solid", label: "Solid", dash: "none" },
+  { value: "dashed", label: "Dashed", dash: "4,3" },
+  { value: "dotted", label: "Dotted", dash: "1,2" },
+];
+
+// Human-readable labels for the raw cfg field names, since "smoothD" or
+// "maxStep" isn't something to show verbatim in a settings dialog.
+const INPUT_LABELS = {
+  period: "Length", period2: "Length 2", fast: "Fast Length", slow: "Slow Length",
+  signal: "Signal Smoothing", mult: "Multiplier", smoothD: "%D Smoothing",
+  step: "Start", maxStep: "Max Step", deviation: "Deviation %",
+};
+const NON_INPUT_FIELDS = new Set(["enabled", "color", "lineWidth", "lineStyle"]);
+
 function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
   const ref = useRef(null);
+  const [tab, setTab] = useState("inputs");
   useEffect(() => {
     function onDocClick(e) {
       if (ref.current && !ref.current.contains(e.target)) onClose();
@@ -437,48 +457,116 @@ function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [onClose]);
 
-  const numberField = (label, field, min = 1, max = 200) => (
-    <label style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace" }}>
-      {label}
-      <input
-        type="number"
-        min={min}
-        max={max}
-        value={cfg[field]}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          if (!Number.isNaN(v)) onChange({ ...cfg, [field]: v });
-        }}
-        style={{ width: 56, background: "#0B0E14", border: "1px solid #2A3140", borderRadius: 4, color: "#E8EAED", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, padding: "3px 6px" }}
-      />
-    </label>
-  );
+  const inputFields = Object.keys(cfg).filter((k) => !NON_INPUT_FIELDS.has(k));
 
   return (
     <div
       ref={ref}
-      style={{ position: "absolute", top: "110%", left: 0, zIndex: 30, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, padding: 12, width: 190, display: "flex", flexDirection: "column", gap: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}
+      style={{ position: "absolute", top: "110%", left: 0, zIndex: 30, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, width: 240, boxShadow: "0 8px 24px rgba(0,0,0,0.4)", overflow: "hidden" }}
     >
-      <div style={{ fontSize: 11, fontWeight: 700, color: "#E8EAED", fontFamily: "'JetBrains Mono', monospace" }}>{def.label} settings</div>
+      <div style={{ display: "flex", borderBottom: "1px solid #2A3140" }}>
+        {[["inputs", "Inputs"], ["style", "Style"]].map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            style={{
+              flex: 1, padding: "9px 0", background: "none", border: "none", cursor: "pointer",
+              fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+              color: tab === key ? "#E8EAED" : "#4A5063",
+              borderBottom: tab === key ? "2px solid #F5B700" : "2px solid transparent",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {"period" in cfg && numberField("Period", "period", 2, 200)}
-      {"mult" in cfg && numberField("Std Dev ×", "mult", 1, 5)}
-      {"fast" in cfg && numberField("Fast", "fast", 2, 100)}
-      {"slow" in cfg && numberField("Slow", "slow", 2, 200)}
-      {"signal" in cfg && numberField("Signal", "signal", 2, 50)}
-      {"smoothD" in cfg && numberField("Smooth D", "smoothD", 1, 20)}
+      <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+        {tab === "inputs" && (
+          inputFields.length === 0 ? (
+            <div style={{ fontSize: 11, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace" }}>No configurable inputs for {def.label}.</div>
+          ) : (
+            inputFields.map((field) => (
+              <label key={field} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace" }}>
+                {INPUT_LABELS[field] || field}
+                <input
+                  type="number"
+                  step={field === "deviation" ? 0.5 : field === "maxStep" || field === "step" ? 0.01 : 1}
+                  value={cfg[field]}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (!Number.isNaN(v)) onChange({ ...cfg, [field]: v });
+                  }}
+                  style={{ width: 64, background: "#0B0E14", border: "1px solid #2A3140", borderRadius: 4, color: "#E8EAED", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, padding: "3px 6px" }}
+                />
+              </label>
+            ))
+          )
+        )}
 
-      <div>
-        <div style={{ fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>Color</div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {COLOR_PRESETS.map((c) => (
-            <button
-              key={c}
-              onClick={() => onChange({ ...cfg, color: c })}
-              style={{ width: 20, height: 20, borderRadius: "50%", background: c, border: cfg.color === c ? "2px solid #E8EAED" : "2px solid transparent", cursor: "pointer" }}
-            />
-          ))}
-        </div>
+        {tab === "style" && (
+          <>
+            <div>
+              <div style={{ fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>Color</div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                {COLOR_PRESETS.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => onChange({ ...cfg, color: c })}
+                    style={{ width: 20, height: 20, borderRadius: "50%", background: c, border: cfg.color === c ? "2px solid #E8EAED" : "2px solid transparent", cursor: "pointer" }}
+                  />
+                ))}
+                {/* Full custom color, matching TradingView's "any color" swatch */}
+                <input
+                  type="color"
+                  value={cfg.color}
+                  onChange={(e) => onChange({ ...cfg, color: e.target.value })}
+                  title="Custom color"
+                  style={{ width: 22, height: 22, padding: 0, border: "1px solid #2A3140", borderRadius: "50%", background: "none", cursor: "pointer" }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>Line width</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {LINE_WIDTHS.map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => onChange({ ...cfg, lineWidth: w })}
+                    style={{
+                      width: 30, height: 24, background: cfg.lineWidth === w ? "#2A3140" : "#0B0E14",
+                      border: "1px solid " + (cfg.lineWidth === w ? "#F5B700" : "#2A3140"), borderRadius: 4, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                  >
+                    <div style={{ width: 16, height: w, background: "#E8EAED", borderRadius: 1 }} />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>Line style</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {LINE_STYLES.map((s) => (
+                  <button
+                    key={s.value}
+                    onClick={() => onChange({ ...cfg, lineStyle: s.value })}
+                    title={s.label}
+                    style={{
+                      width: 44, height: 24, background: cfg.lineStyle === s.value ? "#2A3140" : "#0B0E14",
+                      border: "1px solid " + (cfg.lineStyle === s.value ? "#F5B700" : "#2A3140"), borderRadius: 4, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                  >
+                    <svg width="28" height="2"><line x1="0" y1="1" x2="28" y2="1" stroke="#E8EAED" strokeWidth="2" strokeDasharray={s.dash} /></svg>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -486,7 +574,8 @@ function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
 
 function IndicatorChip({ indKey, def, cfg, onToggle, onChange }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const hasSettings = "period" in cfg || "fast" in cfg;
+  // Every indicator now has a Style tab (color/width/line style) at minimum,
+  // even ones with no numeric Inputs — so the settings gear is always shown.
 
   return (
     <div style={{ position: "relative" }}>
@@ -507,7 +596,7 @@ function IndicatorChip({ indKey, def, cfg, onToggle, onChange }) {
         >
           {def.label}{"period" in cfg ? ` ${cfg.period}` : ""}
         </button>
-        {hasSettings && (
+        {(
           <button
             onClick={() => setSettingsOpen((o) => !o)}
             title="Settings"
@@ -724,44 +813,52 @@ export function AppShell({ onBack }) {
     ]
   );
 
+  // Spreads each indicator's own line-width/line-style setting into a
+  // pushed overlay/pane-line object — every cfg now carries these two
+  // fields (added to defaultIndicatorConfig below), so this is just a
+  // shorthand to avoid repeating `width: cfg.X.lineWidth, style: cfg.X.lineStyle`
+  // at every single push call site.
+  const st = (c) => ({ width: c.lineWidth || 1, style: c.lineStyle || "solid" });
+
   const overlays = [];
-  if (cfg.ma20.enabled) overlays.push({ values: indicators.smaVals, color: cfg.ma20.color });
-  if (cfg.ema9.enabled) overlays.push({ values: indicators.emaVals, color: cfg.ema9.color });
+  if (cfg.ma20.enabled) overlays.push({ values: indicators.smaVals, color: cfg.ma20.color, ...st(cfg.ma20) });
+  if (cfg.ema9.enabled) overlays.push({ values: indicators.emaVals, color: cfg.ema9.color, ...st(cfg.ema9) });
   if (cfg.bb.enabled) {
-    overlays.push({ values: indicators.bbVals.upper, color: cfg.bb.color, dash: true });
-    overlays.push({ values: indicators.bbVals.lower, color: cfg.bb.color, dash: true });
+    overlays.push({ values: indicators.bbVals.mid, color: "#FF6D00", ...st(cfg.bb) });
+    overlays.push({ values: indicators.bbVals.upper, color: cfg.bb.color, dash: true, ...st(cfg.bb) });
+    overlays.push({ values: indicators.bbVals.lower, color: cfg.bb.color, dash: true, ...st(cfg.bb) });
   }
-  if (cfg.vwap.enabled) overlays.push({ values: indicators.vwapVals, color: cfg.vwap.color });
+  if (cfg.vwap.enabled) overlays.push({ values: indicators.vwapVals, color: cfg.vwap.color, ...st(cfg.vwap) });
   // Batch 2 overlays
   if (cfg.donchian.enabled) {
-    overlays.push({ values: indicators.donchianVals.upper, color: cfg.donchian.color, dash: true });
-    overlays.push({ values: indicators.donchianVals.lower, color: cfg.donchian.color, dash: true });
+    overlays.push({ values: indicators.donchianVals.upper, color: cfg.donchian.color, dash: true, ...st(cfg.donchian) });
+    overlays.push({ values: indicators.donchianVals.lower, color: cfg.donchian.color, dash: true, ...st(cfg.donchian) });
   }
   if (cfg.keltner.enabled) {
-    overlays.push({ values: indicators.keltnerVals.upper, color: cfg.keltner.color, dash: true });
-    overlays.push({ values: indicators.keltnerVals.lower, color: cfg.keltner.color, dash: true });
+    overlays.push({ values: indicators.keltnerVals.upper, color: cfg.keltner.color, dash: true, ...st(cfg.keltner) });
+    overlays.push({ values: indicators.keltnerVals.lower, color: cfg.keltner.color, dash: true, ...st(cfg.keltner) });
   }
-  if (cfg.vwma.enabled) overlays.push({ values: indicators.vwmaVals, color: cfg.vwma.color });
-  if (cfg.supertrend.enabled) overlays.push({ values: indicators.supertrendVals.value, color: cfg.supertrend.color });
+  if (cfg.vwma.enabled) overlays.push({ values: indicators.vwmaVals, color: cfg.vwma.color, ...st(cfg.vwma) });
+  if (cfg.supertrend.enabled) overlays.push({ values: indicators.supertrendVals.value, color: cfg.supertrend.color, ...st(cfg.supertrend) });
   if (cfg.ichimoku.enabled) {
-    overlays.push({ values: indicators.ichimokuVals.tenkan, color: "#2ED9A0" });
-    overlays.push({ values: indicators.ichimokuVals.kijun, color: "#FF5C77" });
-    overlays.push({ values: indicators.ichimokuVals.senkouA, color: cfg.ichimoku.color, dash: true });
-    overlays.push({ values: indicators.ichimokuVals.senkouB, color: "#4FA9FF", dash: true });
+    overlays.push({ values: indicators.ichimokuVals.tenkan, color: "#2962FF", ...st(cfg.ichimoku) });
+    overlays.push({ values: indicators.ichimokuVals.kijun, color: "#B71C1C", ...st(cfg.ichimoku) });
+    overlays.push({ values: indicators.ichimokuVals.senkouA, color: "#2ED9A0", dash: true, ...st(cfg.ichimoku) });
+    overlays.push({ values: indicators.ichimokuVals.senkouB, color: "#FF5C77", dash: true, ...st(cfg.ichimoku) });
   }
-  if (cfg.typicalprice.enabled) overlays.push({ values: indicators.typicalPriceVals, color: cfg.typicalprice.color });
-  if (cfg.medianprice.enabled) overlays.push({ values: indicators.medianPriceVals, color: cfg.medianprice.color });
-  if (cfg.avgprice.enabled) overlays.push({ values: indicators.avgPriceVals, color: cfg.avgprice.color });
+  if (cfg.typicalprice.enabled) overlays.push({ values: indicators.typicalPriceVals, color: cfg.typicalprice.color, ...st(cfg.typicalprice) });
+  if (cfg.medianprice.enabled) overlays.push({ values: indicators.medianPriceVals, color: cfg.medianprice.color, ...st(cfg.medianprice) });
+  if (cfg.avgprice.enabled) overlays.push({ values: indicators.avgPriceVals, color: cfg.avgprice.color, ...st(cfg.avgprice) });
   if (cfg.envelopes.enabled) {
-    overlays.push({ values: indicators.envelopesVals.upper, color: cfg.envelopes.color, dash: true });
-    overlays.push({ values: indicators.envelopesVals.lower, color: cfg.envelopes.color, dash: true });
+    overlays.push({ values: indicators.envelopesVals.upper, color: cfg.envelopes.color, dash: true, ...st(cfg.envelopes) });
+    overlays.push({ values: indicators.envelopesVals.lower, color: cfg.envelopes.color, dash: true, ...st(cfg.envelopes) });
   }
 
   const indicatorPanes = [];
   if (cfg.rsi.enabled) {
     indicatorPanes.push({
       key: "rsi",
-      lines: [{ values: indicators.rsiVals, color: cfg.rsi.color }],
+      lines: [{ values: indicators.rsiVals, color: cfg.rsi.color, ...st(cfg.rsi) }],
       bounds: [0, 100],
       refLines: [{ value: 30, color: "#2A3140" }, { value: 70, color: "#2A3140" }],
       stretchFactor: 1.4,
@@ -771,8 +868,8 @@ export function AppShell({ onBack }) {
     indicatorPanes.push({
       key: "macd",
       lines: [
-        { values: indicators.macdVals.macdLine, color: cfg.macd.color },
-        { values: indicators.macdVals.signalLine, color: "#7C5CFF" },
+        { values: indicators.macdVals.macdLine, color: cfg.macd.color, ...st(cfg.macd) },
+        { values: indicators.macdVals.signalLine, color: "#FF6D00", ...st(cfg.macd) },
       ],
       histogram: { values: indicators.macdVals.histogram, upColor: "#2ED9A055", downColor: "#FF5C7755" },
       stretchFactor: 1.4,
@@ -782,8 +879,8 @@ export function AppShell({ onBack }) {
     indicatorPanes.push({
       key: "stochrsi",
       lines: [
-        { values: indicators.stochRsiVals.k, color: cfg.stochrsi.color },
-        { values: indicators.stochRsiVals.d, color: "#F5B700" },
+        { values: indicators.stochRsiVals.k, color: cfg.stochrsi.color, ...st(cfg.stochrsi) },
+        { values: indicators.stochRsiVals.d, color: "#FF6D00", ...st(cfg.stochrsi) },
       ],
       bounds: [0, 100],
       refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }],
@@ -792,14 +889,14 @@ export function AppShell({ onBack }) {
   }
 
   // Batch 2 panes
-  if (cfg.atr.enabled) indicatorPanes.push({ key: "atr", lines: [{ values: indicators.atrVals, color: cfg.atr.color }], stretchFactor: 1.2 });
+  if (cfg.atr.enabled) indicatorPanes.push({ key: "atr", lines: [{ values: indicators.atrVals, color: cfg.atr.color, ...st(cfg.atr) }], stretchFactor: 1.2 });
   if (cfg.adx.enabled) {
     indicatorPanes.push({
       key: "adx",
       lines: [
-        { values: indicators.adxVals.adx, color: cfg.adx.color },
-        { values: indicators.adxVals.plusDI, color: "#2ED9A0" },
-        { values: indicators.adxVals.minusDI, color: "#FF5C77" },
+        { values: indicators.adxVals.adx, color: cfg.adx.color, ...st(cfg.adx) },
+        { values: indicators.adxVals.plusDI, color: "#4CAF50", ...st(cfg.adx) },
+        { values: indicators.adxVals.minusDI, color: "#F44336", ...st(cfg.adx) },
       ],
       bounds: [0, 100],
       stretchFactor: 1.4,
@@ -809,8 +906,8 @@ export function AppShell({ onBack }) {
     indicatorPanes.push({
       key: "aroon",
       lines: [
-        { values: indicators.aroonVals.up, color: "#2ED9A0" },
-        { values: indicators.aroonVals.down, color: "#FF5C77" },
+        { values: indicators.aroonVals.up, color: "#2ED9A0", ...st(cfg.aroon) },
+        { values: indicators.aroonVals.down, color: "#FF5C77", ...st(cfg.aroon) },
       ],
       bounds: [0, 100],
       stretchFactor: 1.4,
@@ -820,28 +917,28 @@ export function AppShell({ onBack }) {
     indicatorPanes.push({
       key: "stoch",
       lines: [
-        { values: indicators.stochVals.k, color: cfg.stoch.color },
-        { values: indicators.stochVals.d, color: "#F5B700" },
+        { values: indicators.stochVals.k, color: cfg.stoch.color, ...st(cfg.stoch) },
+        { values: indicators.stochVals.d, color: "#FF6D00", ...st(cfg.stoch) },
       ],
       bounds: [0, 100],
       refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }],
       stretchFactor: 1.4,
     });
   }
-  if (cfg.cci.enabled) indicatorPanes.push({ key: "cci", lines: [{ values: indicators.cciVals, color: cfg.cci.color }], stretchFactor: 1.2 });
-  if (cfg.williamsr.enabled) indicatorPanes.push({ key: "williamsr", lines: [{ values: indicators.williamsRVals, color: cfg.williamsr.color }], bounds: [-100, 0], stretchFactor: 1.2 });
-  if (cfg.obv.enabled) indicatorPanes.push({ key: "obv", lines: [{ values: indicators.obvVals, color: cfg.obv.color }], stretchFactor: 1.2 });
-  if (cfg.mom.enabled) indicatorPanes.push({ key: "mom", lines: [{ values: indicators.momVals, color: cfg.mom.color }], stretchFactor: 1.2 });
-  if (cfg.roc.enabled) indicatorPanes.push({ key: "roc", lines: [{ values: indicators.rocVals, color: cfg.roc.color }], stretchFactor: 1.2 });
+  if (cfg.cci.enabled) indicatorPanes.push({ key: "cci", lines: [{ values: indicators.cciVals, color: cfg.cci.color, ...st(cfg.cci) }], stretchFactor: 1.2 });
+  if (cfg.williamsr.enabled) indicatorPanes.push({ key: "williamsr", lines: [{ values: indicators.williamsRVals, color: cfg.williamsr.color, ...st(cfg.williamsr) }], bounds: [-100, 0], stretchFactor: 1.2 });
+  if (cfg.obv.enabled) indicatorPanes.push({ key: "obv", lines: [{ values: indicators.obvVals, color: cfg.obv.color, ...st(cfg.obv) }], stretchFactor: 1.2 });
+  if (cfg.mom.enabled) indicatorPanes.push({ key: "mom", lines: [{ values: indicators.momVals, color: cfg.mom.color, ...st(cfg.mom) }], stretchFactor: 1.2 });
+  if (cfg.roc.enabled) indicatorPanes.push({ key: "roc", lines: [{ values: indicators.rocVals, color: cfg.roc.color, ...st(cfg.roc) }], stretchFactor: 1.2 });
   if (cfg.ao.enabled) indicatorPanes.push({ key: "ao", histogram: { values: indicators.aoVals, upColor: "#2ED9A055", downColor: "#FF5C7755" }, stretchFactor: 1.2 });
   if (cfg.ac.enabled) indicatorPanes.push({ key: "ac", histogram: { values: indicators.acVals, upColor: "#2ED9A055", downColor: "#FF5C7755" }, stretchFactor: 1.2 });
-  if (cfg.stddev.enabled) indicatorPanes.push({ key: "stddev", lines: [{ values: indicators.stddevVals, color: cfg.stddev.color }], stretchFactor: 1.2 });
-  if (cfg.mfi.enabled) indicatorPanes.push({ key: "mfi", lines: [{ values: indicators.mfiVals, color: cfg.mfi.color }], bounds: [0, 100], refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }], stretchFactor: 1.4 });
-  if (cfg.cmf.enabled) indicatorPanes.push({ key: "cmf", lines: [{ values: indicators.cmfVals, color: cfg.cmf.color }], stretchFactor: 1.2 });
-  if (cfg.bop.enabled) indicatorPanes.push({ key: "bop", lines: [{ values: indicators.bopVals, color: cfg.bop.color }], stretchFactor: 1.2 });
-  if (cfg.trix.enabled) indicatorPanes.push({ key: "trix", lines: [{ values: indicators.trixVals, color: cfg.trix.color }], stretchFactor: 1.2 });
-  if (cfg.efi.enabled) indicatorPanes.push({ key: "efi", lines: [{ values: indicators.efiVals, color: cfg.efi.color }], stretchFactor: 1.2 });
-  if (cfg.ultosc.enabled) indicatorPanes.push({ key: "ultosc", lines: [{ values: indicators.ultoscVals, color: cfg.ultosc.color }], bounds: [0, 100], stretchFactor: 1.4 });
+  if (cfg.stddev.enabled) indicatorPanes.push({ key: "stddev", lines: [{ values: indicators.stddevVals, color: cfg.stddev.color, ...st(cfg.stddev) }], stretchFactor: 1.2 });
+  if (cfg.mfi.enabled) indicatorPanes.push({ key: "mfi", lines: [{ values: indicators.mfiVals, color: cfg.mfi.color, ...st(cfg.mfi) }], bounds: [0, 100], refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }], stretchFactor: 1.4 });
+  if (cfg.cmf.enabled) indicatorPanes.push({ key: "cmf", lines: [{ values: indicators.cmfVals, color: cfg.cmf.color, ...st(cfg.cmf) }], stretchFactor: 1.2 });
+  if (cfg.bop.enabled) indicatorPanes.push({ key: "bop", lines: [{ values: indicators.bopVals, color: cfg.bop.color, ...st(cfg.bop) }], stretchFactor: 1.2 });
+  if (cfg.trix.enabled) indicatorPanes.push({ key: "trix", lines: [{ values: indicators.trixVals, color: cfg.trix.color, ...st(cfg.trix) }], stretchFactor: 1.2 });
+  if (cfg.efi.enabled) indicatorPanes.push({ key: "efi", lines: [{ values: indicators.efiVals, color: cfg.efi.color, ...st(cfg.efi) }], stretchFactor: 1.2 });
+  if (cfg.ultosc.enabled) indicatorPanes.push({ key: "ultosc", lines: [{ values: indicators.ultoscVals, color: cfg.ultosc.color, ...st(cfg.ultosc) }], bounds: [0, 100], stretchFactor: 1.4 });
 
   // Batch 3 — generic pass over the registry, only computing/rendering
   // indicators the user actually turned on (same performance discipline
@@ -852,10 +949,15 @@ export function AppShell({ onBack }) {
     if (!c?.enabled || candles.length === 0) return;
     const raw = entry.compute(candles, closes, c);
     if (entry.type === "overlay") {
-      overlays.push(...entry.toOverlay(raw, c));
+      overlays.push(...entry.toOverlay(raw, c).map((l) => ({ ...l, ...st(c) })));
     } else {
       const paneConfig = entry.toPane(raw, c);
-      indicatorPanes.push({ key: entry.key, stretchFactor: 1.2, ...paneConfig });
+      indicatorPanes.push({
+        key: entry.key,
+        stretchFactor: 1.2,
+        ...paneConfig,
+        lines: (paneConfig.lines || []).map((l) => ({ ...l, ...st(c) })),
+      });
     }
   });
 
