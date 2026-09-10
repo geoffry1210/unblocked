@@ -688,6 +688,72 @@ function ToolGroupDropdown({ group, activeTool, onSelect, direction = "down" }) 
   );
 }
 
+// Floating "tool customization bar" — appears above a selected drawing,
+// matching TradingView's own selected-drawing toolbar. Positioned near
+// whatever screen coordinate Chart.jsx reports as the selection's anchor
+// (the drawing's first point), which is why it needs to be re-clamped into
+// view every render — the anchor moves as the chart pans/zooms.
+function SelectionToolbar({ drawing, anchor, onChangeColor, onChangeWidth, onDuplicate, onDelete, onDeselect }) {
+  const [openPanel, setOpenPanel] = useState(null); // 'color' | 'width' | null
+  if (!drawing || !anchor) return null;
+
+  const left = Math.max(8, Math.min(anchor.x - 20, 600));
+  const top = Math.max(8, anchor.y - 46);
+
+  return (
+    <div
+      style={{
+        position: "absolute", left, top, zIndex: 20,
+        display: "flex", alignItems: "center", gap: 2,
+        background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8,
+        padding: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+      }}
+    >
+      <div style={{ position: "relative" }}>
+        <button
+          onClick={() => setOpenPanel((p) => (p === "color" ? null : "color"))}
+          title="Color"
+          style={{ width: 22, height: 22, borderRadius: "50%", background: drawing.color || "#F5B700", border: "2px solid #0B0E14", cursor: "pointer" }}
+        />
+        {openPanel === "color" && (
+          <div style={{ position: "absolute", top: "120%", left: 0, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, padding: 8, display: "flex", gap: 6, zIndex: 25 }}>
+            {COLOR_PRESETS.map((c) => (
+              <button key={c} onClick={() => { onChangeColor(c); setOpenPanel(null); }} style={{ width: 20, height: 20, borderRadius: "50%", background: c, border: drawing.color === c ? "2px solid #E8EAED" : "2px solid transparent", cursor: "pointer" }} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ width: 1, height: 18, background: "#2A3140", margin: "0 2px" }} />
+
+      <div style={{ position: "relative" }}>
+        <button
+          onClick={() => setOpenPanel((p) => (p === "width" ? null : "width"))}
+          title="Line width"
+          style={{ padding: "4px 8px", background: "transparent", border: "none", color: "#8B93A3", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}
+        >
+          {drawing.width || 1}px
+        </button>
+        {openPanel === "width" && (
+          <div style={{ position: "absolute", top: "120%", left: 0, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, padding: 4, zIndex: 25, width: 70 }}>
+            {LINE_WIDTHS.map((w) => (
+              <div key={w} onClick={() => { onChangeWidth(w); setOpenPanel(null); }} style={{ padding: "6px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: drawing.width === w ? "#F5B700" : "#E8EAED", cursor: "pointer" }}>
+                {w}px
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ width: 1, height: 18, background: "#2A3140", margin: "0 2px" }} />
+
+      <button onClick={onDuplicate} title="Duplicate" style={{ padding: "4px 8px", background: "transparent", border: "none", color: "#8B93A3", fontSize: 13, cursor: "pointer" }}>⧉</button>
+      <button onClick={onDelete} title="Delete" style={{ padding: "4px 8px", background: "transparent", border: "none", color: "#FF5C77", fontSize: 13, cursor: "pointer" }}>🗑</button>
+      <button onClick={onDeselect} title="Deselect" style={{ padding: "4px 8px", background: "transparent", border: "none", color: "#4A5063", fontSize: 13, cursor: "pointer" }}>✕</button>
+    </div>
+  );
+}
+
 export function AppShell({ onBack }) {
   const [symbols, setSymbols] = useState([]);
   const [symbolsError, setSymbolsError] = useState(null);
@@ -712,6 +778,8 @@ export function AppShell({ onBack }) {
   const [locked, setLocked] = useState(false);
   const [drawingsHidden, setDrawingsHidden] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState(null);
+  const [selectionAnchor, setSelectionAnchor] = useState(null);
 
   useEffect(() => {
     fetchSymbols()
@@ -737,6 +805,7 @@ export function AppShell({ onBack }) {
     setDrawings(loadJSON(drawingsStorageKey(activeSymbol, tf), []));
     setPendingPoints([]);
     setDrawTool(null);
+    setSelectedId(null);
   }, [activeSymbol, tf]);
 
   useEffect(() => {
@@ -767,8 +836,6 @@ export function AppShell({ onBack }) {
       rsiVals: rsi(closes, cfg.rsi.period),
       macdVals: macd(closes, cfg.macd.fast, cfg.macd.slow, cfg.macd.signal),
       stochRsiVals: stochRsi(closes, cfg.stochrsi.period, cfg.stochrsi.period, cfg.stochrsi.smoothD),
-      // Batch 2 — only computed when enabled, since several of these (esp.
-      // Ichimoku, ADX) are meaningfully more expensive than a moving average.
       atrVals: cfg.atr.enabled ? atr(candles, cfg.atr.period) : null,
       adxVals: cfg.adx.enabled ? adx(candles, cfg.adx.period) : null,
       aroonVals: cfg.aroon.enabled ? aroon(candles, cfg.aroon.period) : null,
@@ -975,6 +1042,7 @@ export function AppShell({ onBack }) {
 
   const selectDrawTool = (key) => {
     setPendingPoints([]);
+    setSelectedId(null);
     setDrawTool((cur) => (cur === key ? null : key));
   };
 
@@ -1019,6 +1087,7 @@ export function AppShell({ onBack }) {
       // drawing's anchor points, not the full rendered line/shape.
       if (closestId != null && closestDist < 0.08) {
         setDrawings((prev) => prev.filter((d) => d.id !== closestId));
+        if (selectedId === closestId) setSelectedId(null);
       }
       return;
     }
@@ -1077,7 +1146,50 @@ export function AppShell({ onBack }) {
     setDrawTool(null);
   };
 
-  const removeDrawing = (id) => setDrawings((prev) => prev.filter((d) => d.id !== id));
+  const removeDrawing = (id) => {
+    setDrawings((prev) => prev.filter((d) => d.id !== id));
+    if (selectedId === id) setSelectedId(null);
+  };
+
+  // ---- Selection editing: select-and-drag + floating toolbar ----
+  const selectedDrawing = drawings.find((d) => d.id === selectedId) || null;
+
+  const handleSelectDrawing = (id) => {
+    if (drawTool) return; // selection only applies in cursor mode
+    setSelectedId(id);
+  };
+
+  const handleDrawingChange = (id, newPoints) => {
+    if (locked) return;
+    setDrawings((prev) => prev.map((d) => (d.id === id ? { ...d, points: newPoints } : d)));
+  };
+
+  const handleSelectionColorChange = (color) => {
+    if (!selectedId) return;
+    setDrawings((prev) => prev.map((d) => (d.id === selectedId ? { ...d, color } : d)));
+  };
+
+  const handleSelectionWidthChange = (width) => {
+    if (!selectedId) return;
+    setDrawings((prev) => prev.map((d) => (d.id === selectedId ? { ...d, width } : d)));
+  };
+
+  const handleDuplicateSelection = () => {
+    if (!selectedDrawing) return;
+    const bump = (selectedDrawing.points[0]?.price || 0) * 0.002;
+    const copy = {
+      ...selectedDrawing,
+      id: `${Date.now()}`,
+      points: selectedDrawing.points.map((p) => ({ ...p, price: p.price + bump })),
+    };
+    setDrawings((prev) => [...prev, copy]);
+    setSelectedId(copy.id);
+  };
+
+  const handleDeleteSelection = () => {
+    if (!selectedId) return;
+    removeDrawing(selectedId);
+  };
 
   if (symbolsError) {
     return (
@@ -1136,7 +1248,7 @@ export function AppShell({ onBack }) {
         <aside style={{ width: 44, flexShrink: 0, borderRight: "1px solid #1D232F", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "8px 5px", overflow: "visible" }}>
           <button
             onClick={() => { setDrawTool(null); setPendingPoints([]); }}
-            title="Cursor"
+            title="Cursor — select and drag existing drawings"
             style={{
               display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 15, cursor: "pointer",
               background: !drawTool ? "#F5B70022" : "transparent",
@@ -1163,7 +1275,7 @@ export function AppShell({ onBack }) {
           </button>
           <button
             onClick={() => setLocked((v) => !v)}
-            title={locked ? "Locked — drawings can't be erased" : "Unlocked"}
+            title={locked ? "Locked — drawings can't be erased or dragged" : "Unlocked"}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 14, cursor: "pointer", background: locked ? "#F5B70022" : "transparent", color: locked ? "#F5B700" : "#8B93A3", border: "1px solid " + (locked ? "#F5B70055" : "#232A38"), borderRadius: 6 }}
           >
             {locked ? "🔒" : "🔓"}
@@ -1176,7 +1288,7 @@ export function AppShell({ onBack }) {
             👁
           </button>
           <button
-            onClick={() => { if (drawings.length > 0 && window.confirm(`Remove all ${drawings.length} drawings?`)) setDrawings([]); }}
+            onClick={() => { if (drawings.length > 0 && window.confirm(`Remove all ${drawings.length} drawings?`)) { setDrawings([]); setSelectedId(null); } }}
             title="Remove all drawings"
             style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 14, cursor: "pointer", background: "transparent", color: "#8B93A3", border: "1px solid #232A38", borderRadius: 6 }}
           >
@@ -1211,21 +1323,38 @@ export function AppShell({ onBack }) {
               No historical candles yet for {activeLabel} — either it needs backfilling, or the relay hasn't written any live candles for it yet.
             </div>
           ) : (
-            <TradingChart
-              candles={candles}
-              overlays={overlays}
-              indicatorPanes={indicatorPanes}
-              height="100%"
-              up="#2ED9A0"
-              down="#FF5C77"
-              drawings={drawingsHidden ? [] : drawings}
-              pendingPoints={pendingPoints}
-              drawTool={drawTool}
-              drawToolClicksNeeded={ALL_DRAW_TOOLS.find((t) => t.key === drawTool)?.clicksNeeded ?? 1}
-              onChartClick={handleChartClick}
-              onFreehandComplete={handleFreehandComplete}
-              onLoadMore={loadMore}
-            />
+            <>
+              <TradingChart
+                candles={candles}
+                overlays={overlays}
+                indicatorPanes={indicatorPanes}
+                height="100%"
+                up="#2ED9A0"
+                down="#FF5C77"
+                drawings={drawingsHidden ? [] : drawings}
+                pendingPoints={pendingPoints}
+                drawTool={drawTool}
+                drawToolClicksNeeded={ALL_DRAW_TOOLS.find((t) => t.key === drawTool)?.clicksNeeded ?? 1}
+                onChartClick={handleChartClick}
+                onFreehandComplete={handleFreehandComplete}
+                onLoadMore={loadMore}
+                selectedId={selectedId}
+                onSelectDrawing={handleSelectDrawing}
+                onDrawingChange={handleDrawingChange}
+                onSelectionAnchor={setSelectionAnchor}
+              />
+              {!drawingsHidden && (
+                <SelectionToolbar
+                  drawing={selectedDrawing}
+                  anchor={selectionAnchor}
+                  onChangeColor={handleSelectionColorChange}
+                  onChangeWidth={handleSelectionWidthChange}
+                  onDuplicate={handleDuplicateSelection}
+                  onDelete={handleDeleteSelection}
+                  onDeselect={() => setSelectedId(null)}
+                />
+              )}
+            </>
           )}
         </main>
       </div>
@@ -1233,9 +1362,13 @@ export function AppShell({ onBack }) {
       {drawings.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "0 16px 8px" }}>
           {drawings.map((d) => (
-            <div key={d.id} style={{ display: "flex", alignItems: "center", gap: 6, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 6, padding: "3px 8px", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8B93A3" }}>
+            <div
+              key={d.id}
+              onClick={() => !drawTool && setSelectedId(d.id)}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: selectedId === d.id ? "#F5B70022" : "#191F2A", border: "1px solid " + (selectedId === d.id ? "#F5B70055" : "#2A3140"), borderRadius: 6, padding: "3px 8px", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8B93A3", cursor: drawTool ? "default" : "pointer" }}
+            >
               {d.type}{d.type === "text" ? `: ${d.text?.slice(0, 16)}` : ""}
-              <span onClick={() => removeDrawing(d.id)} style={{ cursor: "pointer", color: "#FF5C77", fontWeight: 700 }}>×</span>
+              <span onClick={(e) => { e.stopPropagation(); removeDrawing(d.id); }} style={{ cursor: "pointer", color: "#FF5C77", fontWeight: 700 }}>×</span>
             </div>
           ))}
         </div>

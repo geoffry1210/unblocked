@@ -100,11 +100,19 @@ function toBoundsData(candles, min, max) {
  * Supported types: trendline, ray, extended, infoline, trendangle,
  * hline, horizontal, vertical, cross, fib, fibext, fibchannel,
  * fibtimezone, parallelchannel, disjointchannel, flattop, anchoredvwap,
- * rectangle, text.
+ * circle, ellipse, triangle, curve, arc, polygon, polyline, path, brush,
+ * highlighter, rectangle, text.
  *
  * onLoadMore: called (at most once per pan gesture) when the visible range
  * scrolls near the left edge of what's currently loaded — this is how
  * backfilled history further back than the initial page gets pulled in.
+ *
+ * Selection editing: in cursor mode (drawTool == null), clicking near an
+ * existing drawing's vertex or body selects it (selectedId/onSelectDrawing)
+ * and shows draggable handles; dragging a vertex resizes that point,
+ * dragging the body translates the whole shape (onDrawingChange). The
+ * selection's on-screen anchor is reported via onSelectionAnchor so the
+ * parent can position a floating toolbar next to it.
  */
 const FIB_EXT_LEVELS = [-0.618, -0.272, 0, 0.272, 0.618, 1, 1.272, 1.618, 2, 2.618];
 const FIB_TIME_SEQUENCE = [1, 2, 3, 5, 8, 13, 21, 34, 55];
@@ -122,6 +130,7 @@ function anchoredVwapPoints(candles, anchorTimeSec) {
   }
   return pts;
 }
+
 export function TradingChart({
   candles,
   overlays = [],
@@ -136,6 +145,10 @@ export function TradingChart({
   onChartClick,
   onFreehandComplete,
   onLoadMore,
+  selectedId,
+  onSelectDrawing,
+  onDrawingChange,
+  onSelectionAnchor,
 }) {
   const containerRef = useRef(null);
   const overlaySvgRef = useRef(null);
@@ -154,6 +167,12 @@ export function TradingChart({
   const clicksNeededRef = useRef(drawToolClicksNeeded);
   const isPaintingRef = useRef(false); // true while a brush/highlighter stroke is actively being dragged
   const freehandPointsRef = useRef([]);
+  const selectedIdRef = useRef(selectedId);
+  const onSelectDrawingRef = useRef(onSelectDrawing);
+  const onDrawingChangeRef = useRef(onDrawingChange);
+  const onSelectionAnchorRef = useRef(onSelectionAnchor);
+  const drawingsRef = useRef([]); // kept current for hit-testing inside native pointer handlers
+  const draggingRef = useRef(null); // { id, vertexIndex (null = whole-body drag), origPoints, startTime, startPrice }
 
   useEffect(() => {
     drawToolRef.current = drawTool;
@@ -162,6 +181,17 @@ export function TradingChart({
     onLoadMoreRef.current = onLoadMore;
     clicksNeededRef.current = drawToolClicksNeeded;
   }, [drawTool, onChartClick, onFreehandComplete, onLoadMore, drawToolClicksNeeded]);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+    onSelectDrawingRef.current = onSelectDrawing;
+    onDrawingChangeRef.current = onDrawingChange;
+    onSelectionAnchorRef.current = onSelectionAnchor;
+  }, [selectedId, onSelectDrawing, onDrawingChange, onSelectionAnchor]);
+
+  useEffect(() => {
+    drawingsRef.current = drawings;
+  }, [drawings]);
 
   // ---- create chart once ----
   useLayoutEffect(() => {
@@ -216,6 +246,7 @@ export function TradingChart({
     // pointer events directly on the container instead, bypassing the
     // click-based drawing flow entirely.
     const isFreehandTool = () => drawToolRef.current === "brush" || drawToolRef.current === "highlighter";
+    const isCursorMode = () => !drawToolRef.current;
     const capturePoint = (e) => {
       const rect = container.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -224,25 +255,113 @@ export function TradingChart({
       const price = candleSeries.coordinateToPrice(y);
       if (time != null && price != null) freehandPointsRef.current.push({ time, price });
     };
+
+    function distToSegment(px, py, ax, ay, bx, by) {
+      const dx = bx - ax, dy = by - ay;
+      const lenSq = dx * dx + dy * dy;
+      let t = lenSq === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+    }
+
+    // Vertex hits take priority over body hits (so you can always grab a
+    // corner even when it's close to another shape's edge). Body hits use
+    // distance-to-nearest-segment, which naturally covers lines, rays,
+    // polylines, and outlines — infinite-projection tools (ray/extended/
+    // hline/vertical/cross) are only grabbable at their stored anchor
+    // point(s), not anywhere along their rendered extension.
+    function hitTest(px, py) {
+      const ts = chart.timeScale();
+      const toXYLocal = (p) => {
+        const x = ts.timeToCoordinate(p.time);
+        const y = candleSeries.priceToCoordinate(p.price);
+        return x == null || y == null ? null : { x, y };
+      };
+      for (const d of drawingsRef.current) {
+        const pts = d.points.map(toXYLocal).filter(Boolean);
+        for (let i = 0; i < pts.length; i++) {
+          if (Math.hypot(px - pts[i].x, py - pts[i].y) < 14) return { id: d.id, vertexIndex: i };
+        }
+      }
+      for (const d of drawingsRef.current) {
+        const pts = d.points.map(toXYLocal).filter(Boolean);
+        for (let i = 0; i < pts.length - 1; i++) {
+          if (distToSegment(px, py, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) < 10) return { id: d.id, vertexIndex: null };
+        }
+      }
+      return null;
+    }
+
+    const onCursorPointerDown = (e) => {
+      if (!isCursorMode()) return;
+      const rect = container.getBoundingClientRect();
+      const px = e.clientX - rect.left, py = e.clientY - rect.top;
+      const hit = hitTest(px, py);
+      if (!hit) {
+        onSelectDrawingRef.current?.(null);
+        draggingRef.current = null;
+        return;
+      }
+      onSelectDrawingRef.current?.(hit.id);
+      const d = drawingsRef.current.find((dd) => dd.id === hit.id);
+      if (!d) return;
+      const time = chart.timeScale().coordinateToTime(px);
+      const price = candleSeries.coordinateToPrice(py);
+      draggingRef.current = { id: hit.id, vertexIndex: hit.vertexIndex, origPoints: d.points.map((p) => ({ ...p })), startTime: time, startPrice: price };
+    };
+    const onCursorPointerMove = (e) => {
+      const drag = draggingRef.current;
+      if (!drag) return;
+      const rect = container.getBoundingClientRect();
+      const px = e.clientX - rect.left, py = e.clientY - rect.top;
+      const time = chart.timeScale().coordinateToTime(px);
+      const price = candleSeries.coordinateToPrice(py);
+      if (time == null || price == null) return;
+
+      let newPoints;
+      if (drag.vertexIndex != null) {
+        newPoints = drag.origPoints.map((p, i) => (i === drag.vertexIndex ? { time, price } : p));
+      } else {
+        const dt = time - drag.startTime;
+        const dp = price - drag.startPrice;
+        newPoints = drag.origPoints.map((p) => ({ time: p.time + dt, price: p.price + dp }));
+      }
+      onDrawingChangeRef.current?.(drag.id, newPoints);
+    };
+    const onCursorPointerUp = () => {
+      draggingRef.current = null;
+    };
+
     const onPointerDown = (e) => {
-      if (!isFreehandTool()) return;
-      isPaintingRef.current = true;
-      freehandPointsRef.current = [];
-      capturePoint(e);
+      if (isFreehandTool()) {
+        isPaintingRef.current = true;
+        freehandPointsRef.current = [];
+        capturePoint(e);
+        return;
+      }
+      onCursorPointerDown(e);
     };
     const onPointerMove = (e) => {
-      if (!isPaintingRef.current) return;
-      capturePoint(e);
-      redraw();
+      if (isPaintingRef.current) {
+        capturePoint(e);
+        redraw();
+        return;
+      }
+      if (draggingRef.current) {
+        onCursorPointerMove(e);
+      }
     };
     const onPointerUp = () => {
-      if (!isPaintingRef.current) return;
-      isPaintingRef.current = false;
-      if (freehandPointsRef.current.length >= 2) {
-        onFreehandCompleteRef.current?.(freehandPointsRef.current.slice());
+      if (isPaintingRef.current) {
+        isPaintingRef.current = false;
+        if (freehandPointsRef.current.length >= 2) {
+          onFreehandCompleteRef.current?.(freehandPointsRef.current.slice());
+        }
+        freehandPointsRef.current = [];
+        redraw();
+        return;
       }
-      freehandPointsRef.current = [];
-      redraw();
+      onCursorPointerUp();
     };
     container.addEventListener("pointerdown", onPointerDown);
     container.addEventListener("pointermove", onPointerMove);
@@ -250,7 +369,7 @@ export function TradingChart({
     container.addEventListener("pointerleave", onPointerUp);
     container.addEventListener("pointercancel", onPointerUp);
 
-
+    // Pan-to-load-more: when the visible logical range's left edge gets
     // within 20 bars of the start of loaded data, ask the parent for an
     // older page. loadMoreArmedRef prevents re-firing on every pixel of
     // the same pan gesture — it re-arms once the user scrolls back away
@@ -392,14 +511,14 @@ export function TradingChart({
         const y = series.priceToCoordinate(p.price);
         return x == null || y == null ? null : { x, y };
       };
-      const addLine = (x1, y1, x2, y2, color, dash) => {
+      const addLine = (x1, y1, x2, y2, color, dash, width) => {
         const el = document.createElementNS(ns, "line");
         el.setAttribute("x1", x1);
         el.setAttribute("y1", y1);
         el.setAttribute("x2", x2);
         el.setAttribute("y2", y2);
         el.setAttribute("stroke", color);
-        el.setAttribute("stroke-width", "1");
+        el.setAttribute("stroke-width", String(width || 1));
         if (dash) el.setAttribute("stroke-dasharray", dash);
         target.appendChild(el);
       };
@@ -425,21 +544,21 @@ export function TradingChart({
         el.textContent = text;
         target.appendChild(el);
       };
-      const addPolyline = (pts, color) => {
+      const addPolyline = (pts, color, width) => {
         if (pts.length < 2) return;
         const el = document.createElementNS(ns, "polyline");
         el.setAttribute("points", pts.map((p) => `${p.x},${p.y}`).join(" "));
         el.setAttribute("fill", "none");
         el.setAttribute("stroke", color);
-        el.setAttribute("stroke-width", "1.2");
+        el.setAttribute("stroke-width", String(width || 1.2));
         target.appendChild(el);
       };
-      const addPath = (d, color, dash) => {
+      const addPath = (d, color, dash, width) => {
         const el = document.createElementNS(ns, "path");
         el.setAttribute("d", d);
         el.setAttribute("fill", "none");
         el.setAttribute("stroke", color);
-        el.setAttribute("stroke-width", "1");
+        el.setAttribute("stroke-width", String(width || 1));
         if (dash) el.setAttribute("stroke-dasharray", dash);
         target.appendChild(el);
       };
@@ -479,13 +598,13 @@ export function TradingChart({
         if (d.type === "trendline") {
           const p1 = toXY(d.points[0]);
           const p2 = toXY(d.points[1]);
-          if (p1 && p2) addLine(p1.x, p1.y, p2.x, p2.y, d.color || "#F5B700");
+          if (p1 && p2) addLine(p1.x, p1.y, p2.x, p2.y, d.color || "#F5B700", null, d.width);
         } else if (d.type === "ray") {
           const p1 = toXY(d.points[0]);
           const p2 = toXY(d.points[1]);
           if (p1 && p2) {
             const far = extendPoint(p1.x, p1.y, p2.x, p2.y, 50);
-            addLine(p1.x, p1.y, far.x, far.y, d.color || "#F5B700");
+            addLine(p1.x, p1.y, far.x, far.y, d.color || "#F5B700", null, d.width);
           }
         } else if (d.type === "extended") {
           const p1 = toXY(d.points[0]);
@@ -493,13 +612,13 @@ export function TradingChart({
           if (p1 && p2) {
             const farA = extendPoint(p2.x, p2.y, p1.x, p1.y, 50);
             const farB = extendPoint(p1.x, p1.y, p2.x, p2.y, 50);
-            addLine(farA.x, farA.y, farB.x, farB.y, d.color || "#F5B700");
+            addLine(farA.x, farA.y, farB.x, farB.y, d.color || "#F5B700", null, d.width);
           }
         } else if (d.type === "infoline") {
           const p1 = toXY(d.points[0]);
           const p2 = toXY(d.points[1]);
           if (p1 && p2) {
-            addLine(p1.x, p1.y, p2.x, p2.y, d.color || "#F5B700");
+            addLine(p1.x, p1.y, p2.x, p2.y, d.color || "#F5B700", null, d.width);
             const priceA = d.points[0].price, priceB = d.points[1].price;
             const diff = priceB - priceA;
             const pct = priceA !== 0 ? (diff / priceA) * 100 : 0;
@@ -510,30 +629,30 @@ export function TradingChart({
           const p1 = toXY(d.points[0]);
           const p2 = toXY(d.points[1]);
           if (p1 && p2) {
-            addLine(p1.x, p1.y, p2.x, p2.y, d.color || "#F5B700");
+            addLine(p1.x, p1.y, p2.x, p2.y, d.color || "#F5B700", null, d.width);
             const angle = (Math.atan2(-(p2.y - p1.y), p2.x - p1.x) * 180) / Math.PI;
             const midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
             addText(midX + 4, midY - 6, `${angle.toFixed(1)}°`, d.color || "#F5B700");
           }
         } else if (d.type === "vertical") {
           const x = ts.timeToCoordinate(d.points[0].time);
-          if (x != null) addLine(x, 0, x, rect.height, d.color || "#4FA9FF", "3,2");
+          if (x != null) addLine(x, 0, x, rect.height, d.color || "#4FA9FF", "3,2", d.width);
         } else if (d.type === "cross") {
           const p1 = toXY(d.points[0]);
           if (p1) {
-            addLine(0, p1.y, rect.width, p1.y, d.color || "#4FA9FF", "3,2");
-            addLine(p1.x, 0, p1.x, rect.height, d.color || "#4FA9FF", "3,2");
+            addLine(0, p1.y, rect.width, p1.y, d.color || "#4FA9FF", "3,2", d.width);
+            addLine(p1.x, 0, p1.x, rect.height, d.color || "#4FA9FF", "3,2", d.width);
           }
         } else if (d.type === "hline") {
           const p1 = toXY(d.points[0]);
           if (p1) {
-            addLine(0, p1.y, rect.width, p1.y, d.color || "#2ED9A0", "4,3");
+            addLine(0, p1.y, rect.width, p1.y, d.color || "#2ED9A0", "4,3", d.width);
             addText(4, p1.y - 4, fmt(d.points[0].price), d.color || "#2ED9A0");
           }
         } else if (d.type === "horizontal") {
           const p1 = toXY(d.points[0]);
           if (p1) {
-            addLine(0, p1.y, rect.width, p1.y, d.color || "#2ED9A0", "4,3");
+            addLine(0, p1.y, rect.width, p1.y, d.color || "#2ED9A0", "4,3", d.width);
             addText(4, p1.y - 4, fmt(d.points[0].price), d.color || "#2ED9A0");
           }
         } else if (d.type === "fib") {
@@ -545,7 +664,7 @@ export function TradingChart({
             const price = high - lv * (high - low);
             const y = series.priceToCoordinate(price);
             if (y == null) return;
-            addLine(0, y, rect.width, y, d.color || "#7C5CFF", "2,2");
+            addLine(0, y, rect.width, y, d.color || "#7C5CFF", "2,2", d.width);
             addText(4, y - 4, `${(lv * 100).toFixed(1)}% ${fmt(price)}`, d.color || "#7C5CFF");
           });
         } else if (d.type === "fibext") {
@@ -555,7 +674,7 @@ export function TradingChart({
             const price = a + lv * dir;
             const y = series.priceToCoordinate(price);
             if (y == null) return;
-            addLine(0, y, rect.width, y, d.color || "#4FA9FF", "2,2");
+            addLine(0, y, rect.width, y, d.color || "#4FA9FF", "2,2", d.width);
             addText(4, y - 4, `${(lv * 100).toFixed(1)}% ${fmt(price)}`, d.color || "#4FA9FF");
           });
         } else if (d.type === "fibchannel") {
@@ -565,7 +684,7 @@ export function TradingChart({
           if (p1 && p2 && p3) {
             const far1 = extendPoint(p2.x, p2.y, p1.x, p1.y, 10);
             const far2 = extendPoint(p1.x, p1.y, p2.x, p2.y, 10);
-            addLine(far1.x, far1.y, far2.x, far2.y, d.color || "#7C5CFF");
+            addLine(far1.x, far1.y, far2.x, far2.y, d.color || "#7C5CFF", null, d.width);
             const baseYatP3 = lineYatX(p1, p2, p3.x);
             const width = p3.y - baseYatP3; // pixel offset defining channel width
             [0.236, 0.382, 0.5, 0.618, 0.786, 1].forEach((lv) => {
@@ -591,10 +710,10 @@ export function TradingChart({
           if (p1 && p2 && p3) {
             const far1 = extendPoint(p2.x, p2.y, p1.x, p1.y, 10);
             const far2 = extendPoint(p1.x, p1.y, p2.x, p2.y, 10);
-            addLine(far1.x, far1.y, far2.x, far2.y, d.color || "#2ED9A0");
+            addLine(far1.x, far1.y, far2.x, far2.y, d.color || "#2ED9A0", null, d.width);
             const baseYatP3 = lineYatX(p1, p2, p3.x);
             const offset = p3.y - baseYatP3;
-            addLine(far1.x, far1.y + offset, far2.x, far2.y + offset, d.color || "#2ED9A0");
+            addLine(far1.x, far1.y + offset, far2.x, far2.y + offset, d.color || "#2ED9A0", null, d.width);
           }
         } else if (d.type === "disjointchannel") {
           const a1 = toXY(d.points[0]);
@@ -604,12 +723,12 @@ export function TradingChart({
           if (a1 && a2) {
             const farA1 = extendPoint(a2.x, a2.y, a1.x, a1.y, 10);
             const farA2 = extendPoint(a1.x, a1.y, a2.x, a2.y, 10);
-            addLine(farA1.x, farA1.y, farA2.x, farA2.y, d.color || "#F5B700");
+            addLine(farA1.x, farA1.y, farA2.x, farA2.y, d.color || "#F5B700", null, d.width);
           }
           if (b1 && b2) {
             const farB1 = extendPoint(b2.x, b2.y, b1.x, b1.y, 10);
             const farB2 = extendPoint(b1.x, b1.y, b2.x, b2.y, 10);
-            addLine(farB1.x, farB1.y, farB2.x, farB2.y, d.color || "#F5B700");
+            addLine(farB1.x, farB1.y, farB2.x, farB2.y, d.color || "#F5B700", null, d.width);
           }
         } else if (d.type === "flattop") {
           const p1 = toXY(d.points[0]);
@@ -617,15 +736,15 @@ export function TradingChart({
           const p3 = toXY(d.points[2]);
           if (p1 && p2 && p3) {
             const flatY = Math.min(p1.y, p2.y); // "flat top" — higher of the two = smaller y
-            addLine(p1.x, flatY, p2.x, flatY, d.color || "#FF9F40");
-            addLine(p1.x, flatY, p3.x, p3.y, d.color || "#FF9F40");
-            addLine(p2.x, flatY, p3.x, p3.y, d.color || "#FF9F40");
+            addLine(p1.x, flatY, p2.x, flatY, d.color || "#FF9F40", null, d.width);
+            addLine(p1.x, flatY, p3.x, p3.y, d.color || "#FF9F40", null, d.width);
+            addLine(p2.x, flatY, p3.x, p3.y, d.color || "#FF9F40", null, d.width);
           }
         } else if (d.type === "anchoredvwap") {
           const pts = anchoredVwapPoints(candles, d.points[0].time)
             .map((p) => ({ x: ts.timeToCoordinate(p.time), y: series.priceToCoordinate(p.value) }))
             .filter((p) => p.x != null && p.y != null);
-          addPolyline(pts, d.color || "#FF9F40");
+          addPolyline(pts, d.color || "#FF9F40", d.width);
         } else if (d.type === "circle") {
           const p1 = toXY(d.points[0]);
           const p2 = toXY(d.points[1]);
@@ -656,7 +775,7 @@ export function TradingChart({
           const p1 = toXY(d.points[0]);
           const p2 = toXY(d.points[1]);
           const p3 = toXY(d.points[2]); // control point — the curve bulges toward this
-          if (p1 && p2 && p3) addPath(`M ${p1.x} ${p1.y} Q ${p3.x} ${p3.y} ${p2.x} ${p2.y}`, d.color || "#F5B700");
+          if (p1 && p2 && p3) addPath(`M ${p1.x} ${p1.y} Q ${p3.x} ${p3.y} ${p2.x} ${p2.y}`, d.color || "#F5B700", null, d.width);
         } else if (d.type === "arc") {
           const p1 = toXY(d.points[0]);
           const p2 = toXY(d.points[1]);
@@ -666,9 +785,9 @@ export function TradingChart({
             if (circ) {
               const cross = (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
               const sweepFlag = cross > 0 ? 1 : 0;
-              addPath(`M ${p1.x} ${p1.y} A ${circ.r} ${circ.r} 0 0 ${sweepFlag} ${p2.x} ${p2.y}`, d.color || "#F5B700");
+              addPath(`M ${p1.x} ${p1.y} A ${circ.r} ${circ.r} 0 0 ${sweepFlag} ${p2.x} ${p2.y}`, d.color || "#F5B700", null, d.width);
             } else {
-              addLine(p1.x, p1.y, p2.x, p2.y, d.color || "#F5B700"); // 3 points in a line — no arc possible
+              addLine(p1.x, p1.y, p2.x, p2.y, d.color || "#F5B700", null, d.width); // 3 points in a line — no arc possible
             }
           }
         } else if (d.type === "polygon") {
@@ -684,10 +803,10 @@ export function TradingChart({
           }
         } else if (d.type === "polyline" || d.type === "path") {
           const pts = d.points.map(toXY).filter(Boolean);
-          addPolyline(pts, d.color || "#F5B700");
+          addPolyline(pts, d.color || "#F5B700", d.width);
         } else if (d.type === "brush") {
           const pts = d.points.map(toXY).filter(Boolean);
-          addPolyline(pts, d.color || "#F5B700");
+          addPolyline(pts, d.color || "#F5B700", d.width);
         } else if (d.type === "highlighter") {
           const pts = d.points.map(toXY).filter(Boolean);
           if (pts.length >= 2) {
@@ -712,6 +831,27 @@ export function TradingChart({
       };
 
       drawings.forEach(renderOne);
+
+      // Selection handles — draggable circles at every point of the
+      // selected drawing, plus reporting its anchor (first point) back so
+      // the floating customization toolbar can position itself.
+      const selected = selectedId ? drawings.find((d) => d.id === selectedId) : null;
+      if (selected) {
+        const pts = selected.points.map(toXY).filter(Boolean);
+        pts.forEach((p) => {
+          const el = document.createElementNS(ns, "circle");
+          el.setAttribute("cx", p.x);
+          el.setAttribute("cy", p.y);
+          el.setAttribute("r", "6");
+          el.setAttribute("fill", "#0B0E14");
+          el.setAttribute("stroke", "#F5B700");
+          el.setAttribute("stroke-width", "2");
+          svg.appendChild(el);
+        });
+        onSelectionAnchorRef.current?.(pts[0] ? { x: pts[0].x, y: pts[0].y } : null);
+      } else {
+        onSelectionAnchorRef.current?.(null);
+      }
 
       pendingPoints.forEach((pt) => {
         const p = toXY(pt);
@@ -757,7 +897,7 @@ export function TradingChart({
     };
     redrawDrawingsRef.current = draw;
     draw();
-  }, [drawings, pendingPoints, candles]);
+  }, [drawings, pendingPoints, candles, selectedId]);
 
   return (
     <div style={{ position: "relative", width: "100%", height, cursor: drawTool ? "crosshair" : "default" }}>
