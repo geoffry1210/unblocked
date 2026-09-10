@@ -13,6 +13,7 @@ import * as batch3 from "../lib/indicatorsBatch3.js";
 import { TradingChart } from "./Chart.jsx";
 import { AdSlot } from "./AdSlot.jsx";
 import { IndicatorPicker } from "./IndicatorPicker.jsx";
+import { INDICATOR_CATALOG } from "../lib/indicatorCatalog.js";
 
 // Each indicator now carries its own config (period, color, etc.), not just
 // an on/off flag — this is what makes the settings popover possible.
@@ -423,6 +424,75 @@ function SymbolSearch({ symbols, activeLabel, onSelect }) {
               {s.display} <span style={{ color: "#4A5063" }}>· {EXCHANGE_LABELS[s.exchange] || s.exchange} · {MARKET_TYPE_LABELS[s.marketType] || s.marketType}</span>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const FAVORITES_KEY = "unblocked.indicatorFavorites.v1";
+
+function loadFavoriteIds() {
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+// Quick-access dropdown beside "+ Indicators" — lets you flip on a starred
+// indicator in one click instead of opening the full search modal every
+// time. Shares the same localStorage favorites IndicatorPicker.jsx writes
+// to; re-reads on open rather than holding its own copy, since favorites
+// can change from inside that modal at any point.
+function FavoritesDropdown({ onSelect }) {
+  const [open, setOpen] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState([]);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const favorites = favoriteIds
+    .map((id) => INDICATOR_CATALOG.find((e) => e.id === id))
+    .filter((e) => e && e.implemented);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        onClick={() => {
+          if (!open) setFavoriteIds(loadFavoriteIds());
+          setOpen((o) => !o);
+        }}
+        title="Favorite indicators"
+        style={{ background: "transparent", color: "#F5B700", border: "1px solid #232A38", borderRadius: 6, padding: "5px 8px", fontSize: 12, cursor: "pointer" }}
+      >
+        ★
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "110%", right: 0, zIndex: 30, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, width: 200, maxHeight: 260, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+          {favorites.length === 0 ? (
+            <div style={{ padding: "14px 12px", fontSize: 11, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace" }}>
+              Star indicators in the search modal to pin them here.
+            </div>
+          ) : (
+            favorites.map((entry) => (
+              <div
+                key={entry.id}
+                onClick={() => { onSelect(entry); setOpen(false); }}
+                style={{ padding: "8px 12px", fontSize: 12, color: "#E8EAED", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {entry.label}
+              </div>
+            ))
+          )}
         </div>
       )}
     </div>
@@ -1240,6 +1310,7 @@ export function AppShell({ onBack }) {
             >
               + Indicators
             </button>
+            <FavoritesDropdown onSelect={handlePickerSelect} />
           </div>
         </div>
       </header>
