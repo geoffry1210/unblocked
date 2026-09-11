@@ -646,10 +646,15 @@ function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
   );
 }
 
-function IndicatorChip({ indKey, def, cfg, onToggle, onChange }) {
+function defFor(key) {
+  return INDICATOR_DEFS[key] || INDICATOR_DEFS[key.split("__")[0]];
+}
+
+function IndicatorChip({ indKey, def, cfg, onToggle, onChange, onDuplicate, onRemove }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Every indicator now has a Style tab (color/width/line style) at minimum,
   // even ones with no numeric Inputs — so the settings gear is always shown.
+  const isInstance = indKey.includes("__");
 
   return (
     <div style={{ position: "relative" }}>
@@ -670,13 +675,27 @@ function IndicatorChip({ indKey, def, cfg, onToggle, onChange }) {
         >
           {def.label}{"period" in cfg ? ` ${cfg.period}` : ""}
         </button>
-        {(
+        <button
+          onClick={() => setSettingsOpen((o) => !o)}
+          title="Settings"
+          style={{ background: "none", border: "none", color: cfg.enabled ? cfg.color : "#4A5063", cursor: "pointer", fontSize: 11, padding: "2px 6px" }}
+        >
+          ⚙
+        </button>
+        <button
+          onClick={() => onDuplicate(indKey)}
+          title="Add another instance (e.g. a second RSI at a different length)"
+          style={{ background: "none", border: "none", color: "#4A5063", cursor: "pointer", fontSize: 11, padding: "2px 4px" }}
+        >
+          ⧉
+        </button>
+        {isInstance && (
           <button
-            onClick={() => setSettingsOpen((o) => !o)}
-            title="Settings"
-            style={{ background: "none", border: "none", color: cfg.enabled ? cfg.color : "#4A5063", cursor: "pointer", fontSize: 11, padding: "2px 6px" }}
+            onClick={() => onRemove(indKey)}
+            title="Remove this instance"
+            style={{ background: "none", border: "none", color: "#4A5063", cursor: "pointer", fontSize: 11, padding: "2px 4px" }}
           >
-            ⚙
+            ✕
           </button>
         )}
       </div>
@@ -996,6 +1015,12 @@ export function AppShell({ onBack }) {
     if (!saved) return defaults;
     const merged = {};
     Object.keys(defaults).forEach((k) => { merged[k] = { ...defaults[k], ...(saved[k] || {}) }; });
+    // Extra instances (keys like "rsi__1699999999999") aren't in `defaults`
+    // at all — they only exist in what was saved — so they'd otherwise be
+    // silently dropped on every reload. Carry them over as-is.
+    Object.keys(saved).forEach((k) => {
+      if (k.includes("__") && !(k in merged)) merged[k] = saved[k];
+    });
     return merged;
   });
   const [customTimeframes, setCustomTimeframes] = useState(() => loadJSON(customTimeframesStorageKey(), []));
@@ -1067,209 +1092,168 @@ export function AppShell({ onBack }) {
 
   const closes = candles.map((c) => c.c);
   const cfg = indicatorConfig;
-  const indicators = useMemo(
-    () => ({
-      smaVals: sma(closes, cfg.ma20.period),
-      emaVals: ema(closes, cfg.ema9.period),
-      bbVals: bollinger(closes, cfg.bb.period, cfg.bb.mult),
-      vwapVals: vwap(candles),
-      rsiVals: rsi(closes, cfg.rsi.period),
-      macdVals: macd(closes, cfg.macd.fast, cfg.macd.slow, cfg.macd.signal),
-      stochRsiVals: stochRsi(closes, cfg.stochrsi.period, cfg.stochrsi.period, cfg.stochrsi.smoothD),
-      atrVals: cfg.atr.enabled ? atr(candles, cfg.atr.period) : null,
-      adxVals: cfg.adx.enabled ? adx(candles, cfg.adx.period) : null,
-      aroonVals: cfg.aroon.enabled ? aroon(candles, cfg.aroon.period) : null,
-      stochVals: cfg.stoch.enabled ? stochastic(candles, cfg.stoch.period, cfg.stoch.smoothD, 3) : null,
-      cciVals: cfg.cci.enabled ? cci(candles, cfg.cci.period) : null,
-      williamsRVals: cfg.williamsr.enabled ? williamsR(candles, cfg.williamsr.period) : null,
-      obvVals: cfg.obv.enabled ? obv(candles) : null,
-      momVals: cfg.mom.enabled ? momentum(closes, cfg.mom.period) : null,
-      rocVals: cfg.roc.enabled ? roc(closes, cfg.roc.period) : null,
-      aoVals: cfg.ao.enabled ? awesomeOscillator(candles) : null,
-      acVals: cfg.ac.enabled ? acceleratorOscillator(candles) : null,
-      stddevVals: cfg.stddev.enabled ? standardDeviation(closes, cfg.stddev.period) : null,
-      donchianVals: cfg.donchian.enabled ? donchianChannels(candles, cfg.donchian.period) : null,
-      keltnerVals: cfg.keltner.enabled ? keltnerChannels(candles, cfg.keltner.period, cfg.keltner.mult) : null,
-      mfiVals: cfg.mfi.enabled ? moneyFlowIndex(candles, cfg.mfi.period) : null,
-      cmfVals: cfg.cmf.enabled ? chaikinMoneyFlow(candles, cfg.cmf.period) : null,
-      vwmaVals: cfg.vwma.enabled ? vwma(candles, cfg.vwma.period) : null,
-      bopVals: cfg.bop.enabled ? balanceOfPower(candles) : null,
-      trixVals: cfg.trix.enabled ? trix(closes, cfg.trix.period) : null,
-      efiVals: cfg.efi.enabled ? elderForceIndex(candles, cfg.efi.period) : null,
-      supertrendVals: cfg.supertrend.enabled ? superTrend(candles, cfg.supertrend.period, cfg.supertrend.mult) : null,
-      ichimokuVals: cfg.ichimoku.enabled ? ichimoku(candles) : null,
-      ultoscVals: cfg.ultosc.enabled ? ultimateOscillator(candles) : null,
-      typicalPriceVals: cfg.typicalprice.enabled ? typicalPrice(candles) : null,
-      medianPriceVals: cfg.medianprice.enabled ? medianPrice(candles) : null,
-      avgPriceVals: cfg.avgprice.enabled ? averagePrice(candles) : null,
-      envelopesVals: cfg.envelopes.enabled ? envelopes(closes, cfg.envelopes.period) : null,
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      candles, cfg.ma20.period, cfg.ema9.period, cfg.bb.period, cfg.bb.mult, cfg.rsi.period,
-      cfg.macd.fast, cfg.macd.slow, cfg.macd.signal, cfg.stochrsi.period, cfg.stochrsi.smoothD,
-      cfg.atr.enabled, cfg.atr.period, cfg.adx.enabled, cfg.adx.period, cfg.aroon.enabled, cfg.aroon.period,
-      cfg.stoch.enabled, cfg.stoch.period, cfg.stoch.smoothD, cfg.cci.enabled, cfg.cci.period,
-      cfg.williamsr.enabled, cfg.williamsr.period, cfg.obv.enabled, cfg.mom.enabled, cfg.mom.period,
-      cfg.roc.enabled, cfg.roc.period, cfg.ao.enabled, cfg.ac.enabled, cfg.stddev.enabled, cfg.stddev.period,
-      cfg.donchian.enabled, cfg.donchian.period, cfg.keltner.enabled, cfg.keltner.period, cfg.keltner.mult,
-      cfg.mfi.enabled, cfg.mfi.period, cfg.cmf.enabled, cfg.cmf.period, cfg.vwma.enabled, cfg.vwma.period,
-      cfg.bop.enabled, cfg.trix.enabled, cfg.trix.period, cfg.efi.enabled, cfg.efi.period,
-      cfg.supertrend.enabled, cfg.supertrend.period, cfg.supertrend.mult, cfg.ichimoku.enabled, cfg.ultosc.enabled,
-      cfg.typicalprice.enabled, cfg.medianprice.enabled, cfg.avgprice.enabled, cfg.envelopes.enabled, cfg.envelopes.period,
-    ]
-  );
+
+  // Multi-instance support: any config key equal to `base` or matching
+  // `base__<id>` counts as an instance of that indicator type — no
+  // separate bookkeeping needed, indicatorConfig itself is the source of
+  // truth. This replaces the old single-instance `indicators` useMemo
+  // (which couldn't support two RSIs at different periods anyway, since
+  // it only ever computed one value per indicator type) with inline
+  // per-instance computation below. Slightly less memoized than before,
+  // but correctness for multiple instances matters more than shaving
+  // recomputation on an already-cheap O(n) set of calculations.
+  const instancesOf = (base) => Object.keys(cfg).filter((k) => k === base || k.startsWith(base + "__"));
 
   // Spreads each indicator's own line-width/line-style setting into a
-  // pushed overlay/pane-line object — every cfg now carries these two
-  // fields (added to defaultIndicatorConfig below), so this is just a
-  // shorthand to avoid repeating `width: cfg.X.lineWidth, style: cfg.X.lineStyle`
-  // at every single push call site.
+  // pushed overlay/pane-line object.
   const st = (c) => ({ width: c.lineWidth || 1, style: c.lineStyle || "solid" });
 
   const overlays = [];
-  if (cfg.ma20.enabled) overlays.push({ values: indicators.smaVals, color: cfg.ma20.color, ...st(cfg.ma20) });
-  if (cfg.ema9.enabled) overlays.push({ values: indicators.emaVals, color: cfg.ema9.color, ...st(cfg.ema9) });
-  if (cfg.bb.enabled) {
-    overlays.push({ values: indicators.bbVals.mid, color: "#FF6D00", ...st(cfg.bb) });
-    overlays.push({ values: indicators.bbVals.upper, color: cfg.bb.color, dash: true, ...st(cfg.bb) });
-    overlays.push({ values: indicators.bbVals.lower, color: cfg.bb.color, dash: true, ...st(cfg.bb) });
-  }
-  if (cfg.vwap.enabled) overlays.push({ values: indicators.vwapVals, color: cfg.vwap.color, ...st(cfg.vwap) });
-  // Batch 2 overlays
-  if (cfg.donchian.enabled) {
-    overlays.push({ values: indicators.donchianVals.upper, color: cfg.donchian.color, dash: true, ...st(cfg.donchian) });
-    overlays.push({ values: indicators.donchianVals.lower, color: cfg.donchian.color, dash: true, ...st(cfg.donchian) });
-  }
-  if (cfg.keltner.enabled) {
-    overlays.push({ values: indicators.keltnerVals.upper, color: cfg.keltner.color, dash: true, ...st(cfg.keltner) });
-    overlays.push({ values: indicators.keltnerVals.lower, color: cfg.keltner.color, dash: true, ...st(cfg.keltner) });
-  }
-  if (cfg.vwma.enabled) overlays.push({ values: indicators.vwmaVals, color: cfg.vwma.color, ...st(cfg.vwma) });
-  if (cfg.supertrend.enabled) overlays.push({ values: indicators.supertrendVals.value, color: cfg.supertrend.color, ...st(cfg.supertrend) });
-  if (cfg.ichimoku.enabled) {
-    overlays.push({ values: indicators.ichimokuVals.tenkan, color: "#2962FF", ...st(cfg.ichimoku) });
-    overlays.push({ values: indicators.ichimokuVals.kijun, color: "#B71C1C", ...st(cfg.ichimoku) });
-    overlays.push({ values: indicators.ichimokuVals.senkouA, color: "#2ED9A0", dash: true, ...st(cfg.ichimoku) });
-    overlays.push({ values: indicators.ichimokuVals.senkouB, color: "#FF5C77", dash: true, ...st(cfg.ichimoku) });
-  }
-  if (cfg.typicalprice.enabled) overlays.push({ values: indicators.typicalPriceVals, color: cfg.typicalprice.color, ...st(cfg.typicalprice) });
-  if (cfg.medianprice.enabled) overlays.push({ values: indicators.medianPriceVals, color: cfg.medianprice.color, ...st(cfg.medianprice) });
-  if (cfg.avgprice.enabled) overlays.push({ values: indicators.avgPriceVals, color: cfg.avgprice.color, ...st(cfg.avgprice) });
-  if (cfg.envelopes.enabled) {
-    overlays.push({ values: indicators.envelopesVals.upper, color: cfg.envelopes.color, dash: true, ...st(cfg.envelopes) });
-    overlays.push({ values: indicators.envelopesVals.lower, color: cfg.envelopes.color, dash: true, ...st(cfg.envelopes) });
-  }
-
   const indicatorPanes = [];
-  if (cfg.rsi.enabled) {
-    indicatorPanes.push({
-      key: "rsi",
-      lines: [{ values: indicators.rsiVals, color: cfg.rsi.color, ...st(cfg.rsi) }],
-      bounds: [0, 100],
-      refLines: [{ value: 30, color: "#2A3140" }, { value: 70, color: "#2A3140" }],
-      stretchFactor: 1.4,
-    });
-  }
-  if (cfg.macd.enabled) {
-    indicatorPanes.push({
-      key: "macd",
-      lines: [
-        { values: indicators.macdVals.macdLine, color: cfg.macd.color, ...st(cfg.macd) },
-        { values: indicators.macdVals.signalLine, color: "#FF6D00", ...st(cfg.macd) },
-      ],
-      histogram: { values: indicators.macdVals.histogram, upColor: "#2ED9A055", downColor: "#FF5C7755" },
-      stretchFactor: 1.4,
-    });
-  }
-  if (cfg.stochrsi.enabled) {
-    indicatorPanes.push({
-      key: "stochrsi",
-      lines: [
-        { values: indicators.stochRsiVals.k, color: cfg.stochrsi.color, ...st(cfg.stochrsi) },
-        { values: indicators.stochRsiVals.d, color: "#FF6D00", ...st(cfg.stochrsi) },
-      ],
-      bounds: [0, 100],
-      refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }],
-      stretchFactor: 1.4,
-    });
-  }
 
-  // Batch 2 panes
-  if (cfg.atr.enabled) indicatorPanes.push({ key: "atr", lines: [{ values: indicators.atrVals, color: cfg.atr.color, ...st(cfg.atr) }], stretchFactor: 1.2 });
-  if (cfg.adx.enabled) {
-    indicatorPanes.push({
-      key: "adx",
-      lines: [
-        { values: indicators.adxVals.adx, color: cfg.adx.color, ...st(cfg.adx) },
-        { values: indicators.adxVals.plusDI, color: "#4CAF50", ...st(cfg.adx) },
-        { values: indicators.adxVals.minusDI, color: "#F44336", ...st(cfg.adx) },
-      ],
-      bounds: [0, 100],
-      stretchFactor: 1.4,
-    });
-  }
-  if (cfg.aroon.enabled) {
-    indicatorPanes.push({
-      key: "aroon",
-      lines: [
-        { values: indicators.aroonVals.up, color: "#2ED9A0", ...st(cfg.aroon) },
-        { values: indicators.aroonVals.down, color: "#FF5C77", ...st(cfg.aroon) },
-      ],
-      bounds: [0, 100],
-      stretchFactor: 1.4,
-    });
-  }
-  if (cfg.stoch.enabled) {
-    indicatorPanes.push({
-      key: "stoch",
-      lines: [
-        { values: indicators.stochVals.k, color: cfg.stoch.color, ...st(cfg.stoch) },
-        { values: indicators.stochVals.d, color: "#FF6D00", ...st(cfg.stoch) },
-      ],
-      bounds: [0, 100],
-      refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }],
-      stretchFactor: 1.4,
-    });
-  }
-  if (cfg.cci.enabled) indicatorPanes.push({ key: "cci", lines: [{ values: indicators.cciVals, color: cfg.cci.color, ...st(cfg.cci) }], stretchFactor: 1.2 });
-  if (cfg.williamsr.enabled) indicatorPanes.push({ key: "williamsr", lines: [{ values: indicators.williamsRVals, color: cfg.williamsr.color, ...st(cfg.williamsr) }], bounds: [-100, 0], stretchFactor: 1.2 });
-  if (cfg.obv.enabled) indicatorPanes.push({ key: "obv", lines: [{ values: indicators.obvVals, color: cfg.obv.color, ...st(cfg.obv) }], stretchFactor: 1.2 });
-  if (cfg.mom.enabled) indicatorPanes.push({ key: "mom", lines: [{ values: indicators.momVals, color: cfg.mom.color, ...st(cfg.mom) }], stretchFactor: 1.2 });
-  if (cfg.roc.enabled) indicatorPanes.push({ key: "roc", lines: [{ values: indicators.rocVals, color: cfg.roc.color, ...st(cfg.roc) }], stretchFactor: 1.2 });
-  if (cfg.ao.enabled) indicatorPanes.push({ key: "ao", histogram: { values: indicators.aoVals, upColor: "#2ED9A055", downColor: "#FF5C7755" }, stretchFactor: 1.2 });
-  if (cfg.ac.enabled) indicatorPanes.push({ key: "ac", histogram: { values: indicators.acVals, upColor: "#2ED9A055", downColor: "#FF5C7755" }, stretchFactor: 1.2 });
-  if (cfg.stddev.enabled) indicatorPanes.push({ key: "stddev", lines: [{ values: indicators.stddevVals, color: cfg.stddev.color, ...st(cfg.stddev) }], stretchFactor: 1.2 });
-  if (cfg.mfi.enabled) indicatorPanes.push({ key: "mfi", lines: [{ values: indicators.mfiVals, color: cfg.mfi.color, ...st(cfg.mfi) }], bounds: [0, 100], refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }], stretchFactor: 1.4 });
-  if (cfg.cmf.enabled) indicatorPanes.push({ key: "cmf", lines: [{ values: indicators.cmfVals, color: cfg.cmf.color, ...st(cfg.cmf) }], stretchFactor: 1.2 });
-  if (cfg.bop.enabled) indicatorPanes.push({ key: "bop", lines: [{ values: indicators.bopVals, color: cfg.bop.color, ...st(cfg.bop) }], stretchFactor: 1.2 });
-  if (cfg.trix.enabled) indicatorPanes.push({ key: "trix", lines: [{ values: indicators.trixVals, color: cfg.trix.color, ...st(cfg.trix) }], stretchFactor: 1.2 });
-  if (cfg.efi.enabled) indicatorPanes.push({ key: "efi", lines: [{ values: indicators.efiVals, color: cfg.efi.color, ...st(cfg.efi) }], stretchFactor: 1.2 });
-  if (cfg.ultosc.enabled) indicatorPanes.push({ key: "ultosc", lines: [{ values: indicators.ultoscVals, color: cfg.ultosc.color, ...st(cfg.ultosc) }], bounds: [0, 100], stretchFactor: 1.4 });
+  instancesOf("ma20").forEach((key) => { const c = cfg[key]; if (c.enabled) overlays.push({ values: sma(closes, c.period), color: c.color, ...st(c) }); });
+  instancesOf("ema9").forEach((key) => { const c = cfg[key]; if (c.enabled) overlays.push({ values: ema(closes, c.period), color: c.color, ...st(c) }); });
+  instancesOf("bb").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    const bb = bollinger(closes, c.period, c.mult);
+    overlays.push({ values: bb.mid, color: "#FF6D00", ...st(c) });
+    overlays.push({ values: bb.upper, color: c.color, dash: true, ...st(c) });
+    overlays.push({ values: bb.lower, color: c.color, dash: true, ...st(c) });
+  });
+  instancesOf("vwap").forEach((key) => { const c = cfg[key]; if (c.enabled) overlays.push({ values: vwap(candles), color: c.color, ...st(c) }); });
+  instancesOf("donchian").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    const d = donchianChannels(candles, c.period);
+    overlays.push({ values: d.upper, color: c.color, dash: true, ...st(c) });
+    overlays.push({ values: d.lower, color: c.color, dash: true, ...st(c) });
+  });
+  instancesOf("keltner").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    const k = keltnerChannels(candles, c.period, c.mult);
+    overlays.push({ values: k.upper, color: c.color, dash: true, ...st(c) });
+    overlays.push({ values: k.lower, color: c.color, dash: true, ...st(c) });
+  });
+  instancesOf("vwma").forEach((key) => { const c = cfg[key]; if (c.enabled) overlays.push({ values: vwma(candles, c.period), color: c.color, ...st(c) }); });
+  instancesOf("supertrend").forEach((key) => { const c = cfg[key]; if (c.enabled) overlays.push({ values: superTrend(candles, c.period, c.mult).value, color: c.color, ...st(c) }); });
+  instancesOf("ichimoku").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    const ich = ichimoku(candles);
+    overlays.push({ values: ich.tenkan, color: "#2962FF", ...st(c) });
+    overlays.push({ values: ich.kijun, color: "#B71C1C", ...st(c) });
+    overlays.push({ values: ich.senkouA, color: "#2ED9A0", dash: true, ...st(c) });
+    overlays.push({ values: ich.senkouB, color: "#FF5C77", dash: true, ...st(c) });
+  });
+  instancesOf("typicalprice").forEach((key) => { const c = cfg[key]; if (c.enabled) overlays.push({ values: typicalPrice(candles), color: c.color, ...st(c) }); });
+  instancesOf("medianprice").forEach((key) => { const c = cfg[key]; if (c.enabled) overlays.push({ values: medianPrice(candles), color: c.color, ...st(c) }); });
+  instancesOf("avgprice").forEach((key) => { const c = cfg[key]; if (c.enabled) overlays.push({ values: averagePrice(candles), color: c.color, ...st(c) }); });
+  instancesOf("envelopes").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    const e = envelopes(closes, c.period);
+    overlays.push({ values: e.upper, color: c.color, dash: true, ...st(c) });
+    overlays.push({ values: e.lower, color: c.color, dash: true, ...st(c) });
+  });
 
-  // Batch 3 — generic pass over the registry, only computing/rendering
-  // indicators the user actually turned on (same performance discipline
-  // as the hand-wired ones above; several of these, e.g. Guppy MMA's 12
-  // EMAs or Pivot Points, aren't free to compute on every render).
+  instancesOf("rsi").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    indicatorPanes.push({ key, lines: [{ values: rsi(closes, c.period), color: c.color, ...st(c) }], bounds: [0, 100], refLines: [{ value: 30, color: "#2A3140" }, { value: 70, color: "#2A3140" }], stretchFactor: 1.4 });
+  });
+  instancesOf("macd").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    const m = macd(closes, c.fast, c.slow, c.signal);
+    indicatorPanes.push({
+      key,
+      lines: [{ values: m.macdLine, color: c.color, ...st(c) }, { values: m.signalLine, color: "#FF6D00", ...st(c) }],
+      histogram: { values: m.histogram, upColor: "#2ED9A055", downColor: "#FF5C7755" },
+      stretchFactor: 1.4,
+    });
+  });
+  instancesOf("stochrsi").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    const s = stochRsi(closes, c.period, c.period, c.smoothD);
+    indicatorPanes.push({ key, lines: [{ values: s.k, color: c.color, ...st(c) }, { values: s.d, color: "#FF6D00", ...st(c) }], bounds: [0, 100], refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }], stretchFactor: 1.4 });
+  });
+  instancesOf("atr").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: atr(candles, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
+  instancesOf("adx").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    const a = adx(candles, c.period);
+    indicatorPanes.push({ key, lines: [{ values: a.adx, color: c.color, ...st(c) }, { values: a.plusDI, color: "#4CAF50", ...st(c) }, { values: a.minusDI, color: "#F44336", ...st(c) }], bounds: [0, 100], stretchFactor: 1.4 });
+  });
+  instancesOf("aroon").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    const a = aroon(candles, c.period);
+    indicatorPanes.push({ key, lines: [{ values: a.up, color: "#2ED9A0", ...st(c) }, { values: a.down, color: "#FF5C77", ...st(c) }], bounds: [0, 100], stretchFactor: 1.4 });
+  });
+  instancesOf("stoch").forEach((key) => {
+    const c = cfg[key];
+    if (!c.enabled) return;
+    const s = stochastic(candles, c.period, c.smoothD, 3);
+    indicatorPanes.push({ key, lines: [{ values: s.k, color: c.color, ...st(c) }, { values: s.d, color: "#FF6D00", ...st(c) }], bounds: [0, 100], refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }], stretchFactor: 1.4 });
+  });
+  instancesOf("cci").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: cci(candles, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
+  instancesOf("williamsr").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: williamsR(candles, c.period), color: c.color, ...st(c) }], bounds: [-100, 0], stretchFactor: 1.2 }); });
+  instancesOf("obv").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: obv(candles), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
+  instancesOf("mom").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: momentum(closes, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
+  instancesOf("roc").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: roc(closes, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
+  instancesOf("ao").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, histogram: { values: awesomeOscillator(candles), upColor: "#2ED9A055", downColor: "#FF5C7755" }, stretchFactor: 1.2 }); });
+  instancesOf("ac").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, histogram: { values: acceleratorOscillator(candles), upColor: "#2ED9A055", downColor: "#FF5C7755" }, stretchFactor: 1.2 }); });
+  instancesOf("stddev").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: standardDeviation(closes, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
+  instancesOf("mfi").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: moneyFlowIndex(candles, c.period), color: c.color, ...st(c) }], bounds: [0, 100], refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }], stretchFactor: 1.4 }); });
+  instancesOf("cmf").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: chaikinMoneyFlow(candles, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
+  instancesOf("bop").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: balanceOfPower(candles), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
+  instancesOf("trix").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: trix(closes, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
+  instancesOf("efi").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: elderForceIndex(candles, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
+  instancesOf("ultosc").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: ultimateOscillator(candles), color: c.color, ...st(c) }], bounds: [0, 100], stretchFactor: 1.4 }); });
+
+  // Batch 3 — same instancesOf pattern, generic over the registry. Only
+  // computes for instances actually turned on (several of these, e.g.
+  // Guppy MMA's 12 EMAs or Pivot Points, aren't free to compute blindly).
   BATCH3_REGISTRY.forEach((entry) => {
-    const c = cfg[entry.key];
-    if (!c?.enabled || candles.length === 0) return;
-    const raw = entry.compute(candles, closes, c);
-    if (entry.type === "overlay") {
-      overlays.push(...entry.toOverlay(raw, c).map((l) => ({ ...l, ...st(c) })));
-    } else {
-      const paneConfig = entry.toPane(raw, c);
-      indicatorPanes.push({
-        key: entry.key,
-        stretchFactor: 1.2,
-        ...paneConfig,
-        lines: (paneConfig.lines || []).map((l) => ({ ...l, ...st(c) })),
-      });
-    }
+    if (candles.length === 0) return;
+    instancesOf(entry.key).forEach((key) => {
+      const c = cfg[key];
+      if (!c?.enabled) return;
+      const raw = entry.compute(candles, closes, c);
+      if (entry.type === "overlay") {
+        overlays.push(...entry.toOverlay(raw, c).map((l) => ({ ...l, ...st(c) })));
+      } else {
+        const paneConfig = entry.toPane(raw, c);
+        indicatorPanes.push({ key, stretchFactor: 1.2, ...paneConfig, lines: (paneConfig.lines || []).map((l) => ({ ...l, ...st(c) })) });
+      }
+    });
   });
 
   const toggleIndicator = (key) => setIndicatorConfig((c) => ({ ...c, [key]: { ...c[key], enabled: !c[key].enabled } }));
   const updateIndicator = (key, next) => setIndicatorConfig((c) => ({ ...c, [key]: next }));
+
+  // Adds a second (third, fourth...) instance of an already-configured
+  // indicator — e.g. a 50-period RSI alongside the default 14-period one.
+  // Starting config is a copy of whichever instance was duplicated, so
+  // the new one inherits the same period/color as a sensible starting
+  // point rather than resetting to the indicator's factory defaults.
+  const duplicateIndicator = (key) => {
+    const base = key.includes("__") ? key.split("__")[0] : key;
+    const newKey = `${base}__${Date.now()}`;
+    setIndicatorConfig((c) => ({ ...c, [newKey]: { ...c[key], enabled: true } }));
+    return newKey;
+  };
+
+  const removeIndicatorInstance = (key) => {
+    setIndicatorConfig((c) => {
+      const next = { ...c };
+      delete next[key];
+      return next;
+    });
+  };
 
   // Picker "add" semantics — force-enable rather than toggle, since picking
   // an indicator from search should always turn it on, even if it's
@@ -1470,10 +1454,10 @@ export function AppShell({ onBack }) {
           />
           <div style={{ width: 1, height: 18, background: "#1D232F" }} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            {Object.entries(INDICATOR_DEFS)
-              .filter(([key]) => indicatorConfig[key]?.enabled)
-              .map(([key, def]) => (
-                <IndicatorChip key={key} indKey={key} def={def} cfg={indicatorConfig[key]} onToggle={toggleIndicator} onChange={updateIndicator} />
+            {Object.keys(indicatorConfig)
+              .filter((key) => indicatorConfig[key]?.enabled)
+              .map((key) => (
+                <IndicatorChip key={key} indKey={key} def={defFor(key)} cfg={indicatorConfig[key]} onToggle={toggleIndicator} onChange={updateIndicator} onDuplicate={duplicateIndicator} onRemove={removeIndicatorInstance} />
               ))}
             <button
               onClick={() => setPickerOpen(true)}

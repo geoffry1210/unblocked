@@ -20,3 +20,10 @@ export const EXCHANGE_TIMEFRAMES = {
 export function timeframesFor(exchange, marketType) {
   return EXCHANGE_TIMEFRAMES[exchange]?.[marketType] ?? ["1m", "15m", "1h", "4h", "1d"];
 }
+
+// Whether `timeframe` is natively offered by this exchange/marketType, as
+// opposed to a custom interval that has to be synthesized client/server-side
+// by rolling up 1-minute candles (see server/src/services/aggregate.js).
+export function supportsTimeframe(exchange, marketType, timeframe) {
+  return timeframesFor(exchange, marketType).includes(timeframe);
+}
