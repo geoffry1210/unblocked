@@ -9,23 +9,46 @@
 // that just isn't reliably reachable to begin with.
 //
 // Depth policy per timeframe (deliberately not "as much as possible" for
-// everything — full 1-minute history across years would be tens of
-// millions of rows per symbol, likely blowing past a free Neon instance's
-// storage and taking hours against exchange rate limits):
-//   1d / 4h / 1h  -> full history, however far back each exchange/pair goes
-//   15m           -> last 2 years
-//   1m            -> last 90 days
+// everything — full 1-second or 1-minute history across years would be
+// tens of millions of rows per symbol, likely blowing past a free Neon
+// instance's storage and taking hours against exchange rate limits):
+//   30m and coarser  -> full history, however far back each exchange/pair goes
+//                       (even at 8+ years, row counts stay modest at this
+//                       granularity)
+//   3m / 5m / 15m    -> multi-year windows (still fine-grained enough to
+//                       be useful, coarse enough to stay bounded)
+//   1m               -> last 90 days
+//   1s               -> last 2 days (astronomically high row count per
+//                       day — 86,400 rows/symbol/day — so this stays short
+//                       on purpose; realistically only useful for very
+//                       recent price action anyway)
+//
+// Not every exchange supports every timeframe (see services/timeframes.js)
+// — combos the exchange doesn't offer are skipped rather than attempted.
 
 import { pool } from "../db/pool.js";
 import { upsertCandle } from "../db/candles.js";
+import { ALL_TIMEFRAMES, supportsTimeframe } from "./timeframes.js";
 
-export const TIMEFRAMES = ["1m", "15m", "1h", "4h", "1d"];
+export const TIMEFRAMES = ALL_TIMEFRAMES;
+
 const DEPTH_POLICY = {
-  "1d": { mode: "full" },
-  "4h": { mode: "full" },
-  "1h": { mode: "full" },
-  "15m": { mode: "window", days: 730 },
+  "1s": { mode: "window", days: 2 },
   "1m": { mode: "window", days: 90 },
+  "3m": { mode: "window", days: 365 },
+  "5m": { mode: "window", days: 365 },
+  "15m": { mode: "window", days: 730 },
+  "30m": { mode: "full" },
+  "1h": { mode: "full" },
+  "2h": { mode: "full" },
+  "4h": { mode: "full" },
+  "6h": { mode: "full" },
+  "8h": { mode: "full" },
+  "12h": { mode: "full" },
+  "1d": { mode: "full" },
+  "3d": { mode: "full" },
+  "1w": { mode: "full" },
+  "1M": { mode: "full" },
 };
 
 const FETCH_TIMEOUT_MS = 15000;
@@ -50,6 +73,8 @@ async function fetchJson(url, { retries = 3 } = {}) {
   }
 }
 
+// Binance's kline interval strings match ours exactly (1s,1m,3m,...,1M) —
+// no translation needed.
 const BINANCE_HOSTS = {
   spot: { base: "https://api.binance.com/api/v3/klines", limit: 1000 },
   perp: { base: "https://fapi.binance.com/fapi/v1/klines", limit: 1500 },
@@ -72,7 +97,14 @@ async function backfillBinance({ marketType, symbol, timeframe, startTime, onBat
   }
 }
 
-const TF_TO_BYBIT = { "1m": "1", "15m": "15", "1h": "60", "4h": "240", "1d": "D" };
+// Bybit uses its own interval strings (minute count as a bare number, or
+// D/W/M) — full map now covers everything Bybit actually supports (see
+// services/timeframes.js; notably no 1s, no 8h).
+const TF_TO_BYBIT = {
+  "1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30",
+  "1h": "60", "2h": "120", "4h": "240", "6h": "360", "12h": "720",
+  "1d": "D", "1w": "W", "1M": "M",
+};
 const BYBIT_CATEGORY = { spot: "spot", perp: "linear" };
 
 async function backfillBybit({ marketType, symbol, timeframe, startTime, onBatch }) {
@@ -96,6 +128,9 @@ async function backfillBybit({ marketType, symbol, timeframe, startTime, onBatch
   }
 }
 
+// Bitunix's REST kline endpoint also accepts our exact interval strings
+// (1m,3m,5m,...,1M) directly — no translation map needed, unlike their WS
+// channel names (see exchanges/bitunix.js).
 const BITUNIX_BASE = "https://fapi.bitunix.com/api/v1/futures/market/kline";
 
 async function backfillBitunix({ symbol, timeframe, startTime, onBatch }) {
@@ -133,7 +168,7 @@ async function insertRows(exchange, marketType, symbol, timeframe, rows) {
 
 function windowStart(timeframe) {
   const policy = DEPTH_POLICY[timeframe];
-  if (policy.mode === "full") return 0;
+  if (!policy || policy.mode === "full") return 0;
   return Date.now() - policy.days * 86400_000;
 }
 
@@ -164,13 +199,18 @@ export async function runBackfill({ exchangeFilter = null, symbolFilter = null, 
   if (skipped.length) {
     onProgress(`Skipping ${skipped.length} symbol(s) on exchanges with no live relay yet: ${[...new Set(skipped.map((s) => s.exchange))].join(", ")}`);
   }
-  onProgress(`Backfilling ${runnable.length} exchange/market/symbol combo(s) x ${timeframes.length} timeframe(s)`);
+  onProgress(`Backfilling ${runnable.length} exchange/market/symbol combo(s) x up to ${timeframes.length} timeframe(s) (per-exchange support varies)`);
 
   let totalCandles = 0;
+  let skippedUnsupported = 0;
   const failures = [];
   for (const { exchange, market_type: marketType, pair: symbol } of runnable) {
     for (const timeframe of timeframes) {
       if (!TIMEFRAMES.includes(timeframe)) continue;
+      if (!supportsTimeframe(exchange, marketType, timeframe)) {
+        skippedUnsupported++;
+        continue; // e.g. tf=1s on anything but binance/spot, or tf=8h on bybit
+      }
       const startTime = windowStart(timeframe);
       let countForThis = 0;
       try {
@@ -193,7 +233,7 @@ export async function runBackfill({ exchangeFilter = null, symbolFilter = null, 
     }
   }
 
-  const summary = `Done. ${totalCandles} candles written/updated across ${runnable.length} symbol(s). ${failures.length} failure(s).`;
+  const summary = `Done. ${totalCandles} candles written/updated across ${runnable.length} symbol(s). ${skippedUnsupported} combo(s) skipped (timeframe not supported on that exchange). ${failures.length} failure(s).`;
   onProgress(summary);
-  return { totalCandles, symbolCount: runnable.length, failures, summary };
+  return { totalCandles, symbolCount: runnable.length, skippedUnsupported, failures, summary };
 }

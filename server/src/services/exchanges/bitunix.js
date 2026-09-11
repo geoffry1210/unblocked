@@ -6,9 +6,17 @@
 // carries only a push timestamp (`ts`) and the current OHLCV for that
 // timestamp — no candle open-time and no "closed"/"confirm" flag. Candle
 // boundaries and close detection are therefore INFERRED here (bucket =
-// ts floored to the interval), not exchange-confirmed. A candle is
-// persisted once we observe the *next* bucket starting, meaning writes
-// lag the real close by up to ~500ms (their push interval).
+// ts floored to a fixed interval length in ms), not exchange-confirmed.
+//
+// THIS IS WHY "1M" (month) IS EXCLUDED FROM THE LIVE SET BELOW even though
+// Bitunix's WS channel technically offers it (market_kline_1month) and the
+// REST backfill (services/backfillRunner.js) fully supports it: months
+// aren't a fixed number of milliseconds (28-31 days), so the fixed-bucket
+// flooring this adapter relies on would misalign monthly candle
+// boundaries. Historical 1M data for Bitunix still works fine via
+// backfill/on-demand — it just won't get live in-progress updates. Every
+// other timeframe down to 1m has a fixed, exact ms duration, so the same
+// inference approach is safe for all of them.
 //
 // Sharded across multiple connections (see ../sharding.js), with symbols
 // addable live post-startup — see registerActivationHandler below, which
@@ -19,15 +27,31 @@ import WebSocket from "ws";
 import { upsertCandle, getActiveSymbols } from "../../db/candles.js";
 import { createShardGroup, addSymbolToShardGroup } from "./sharding.js";
 import { onActivation } from "../activationBus.js";
+import { timeframesFor } from "../timeframes.js";
 
 const RECONNECT_DELAY_MS = 5000;
 const PING_INTERVAL_MS = 20000;
 const WS_URL = "wss://fapi.bitunix.com/public/";
 
-const TF_TO_CHANNEL = { "1m": "market_kline_1min", "15m": "market_kline_15min", "1h": "market_kline_60min", "4h": "market_kline_4h", "1d": "market_kline_1day" };
+const TF_TO_CHANNEL = {
+  "1m": "market_kline_1min", "3m": "market_kline_3min", "5m": "market_kline_5min",
+  "15m": "market_kline_15min", "30m": "market_kline_30min", "1h": "market_kline_60min",
+  "2h": "market_kline_2h", "4h": "market_kline_4h", "6h": "market_kline_6h",
+  "8h": "market_kline_8h", "12h": "market_kline_12h", "1d": "market_kline_1day",
+  "3d": "market_kline_3day", "1w": "market_kline_1week",
+  // "1M" intentionally omitted — see file header.
+};
 const CHANNEL_TO_TF = Object.fromEntries(Object.entries(TF_TO_CHANNEL).map(([tf, ch]) => [ch, tf]));
-const TF_TO_MS = { "1m": 60_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000 };
-const TIMEFRAMES = Object.keys(TF_TO_CHANNEL);
+const TF_TO_MS = {
+  "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+  "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "6h": 21_600_000,
+  "8h": 28_800_000, "12h": 43_200_000, "1d": 86_400_000, "3d": 259_200_000,
+  "1w": 604_800_000,
+};
+// The live-streamable set — everything Bitunix supports minus 1M (see
+// header comment). Backfill uses the full set from timeframesFor directly
+// since it doesn't go through this bucket-inference logic at all.
+const TIMEFRAMES = timeframesFor("bitunix", "perp").filter((tf) => tf !== "1M");
 
 function buildSubscribeForSymbol(symbol) {
   return { op: "subscribe", args: TIMEFRAMES.map((tf) => ({ symbol, ch: TF_TO_CHANNEL[tf] })) };

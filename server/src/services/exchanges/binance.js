@@ -2,7 +2,8 @@
 //
 // Both products expose the identical combined-stream kline schema; only the
 // WebSocket host differs (spot: stream.binance.com, perp: fstream.binance.com).
-// Verified against Binance's public API docs.
+// Interval strings match ours exactly (1s,1m,3m,...,1M) — spot supports the
+// full range including 1s; perp starts at 1m (see services/timeframes.js).
 //
 // Streams are subscribed via the SUBSCRIBE method sent after connecting,
 // not embedded in the connection URL — the URL-embedded style breaks once
@@ -19,8 +20,8 @@ import WebSocket from "ws";
 import { upsertCandle, getActiveSymbols } from "../../db/candles.js";
 import { createShardGroup, addSymbolToShardGroup } from "./sharding.js";
 import { onActivation } from "../activationBus.js";
+import { timeframesFor } from "../timeframes.js";
 
-const TIMEFRAMES = ["1m", "15m", "1h", "4h", "1d"];
 const RECONNECT_DELAY_MS = 5000;
 
 const HOSTS = {
@@ -28,12 +29,13 @@ const HOSTS = {
   perp: "wss://fstream.binance.com/stream",
 };
 
-function buildSubscribeForSymbol(symbol) {
-  const streams = TIMEFRAMES.map((tf) => `${symbol.toLowerCase()}@kline_${tf}`);
+function buildSubscribeForSymbol(marketType, symbol) {
+  const streams = timeframesFor("binance", marketType).map((tf) => `${symbol.toLowerCase()}@kline_${tf}`);
   return { method: "SUBSCRIBE", params: streams, id: Date.now() };
 }
 
 export async function startBinanceRelay({ marketType, broadcastCandle }) {
+  const timeframes = timeframesFor("binance", marketType);
   const symbols = await getActiveSymbols("binance", marketType);
   if (symbols.length === 0) {
     console.warn(`No active binance/${marketType} symbols at startup — relay idle until one activates on-demand`);
@@ -41,8 +43,8 @@ export async function startBinanceRelay({ marketType, broadcastCandle }) {
 
   const group = createShardGroup(
     symbols,
-    TIMEFRAMES.length,
-    (shard, shardIndex) => connect(marketType, shard, shardIndex, broadcastCandle),
+    timeframes.length,
+    (shard, shardIndex) => connect(marketType, timeframes, shard, shardIndex, broadcastCandle),
     { label: `Binance ${marketType} relay` }
   );
 
@@ -50,22 +52,22 @@ export async function startBinanceRelay({ marketType, broadcastCandle }) {
   // already active) get subscribed live instead of waiting for a restart.
   onActivation(({ exchange, marketType: mt, symbol }) => {
     if (exchange === "binance" && mt === marketType) {
-      addSymbolToShardGroup(group, symbol, buildSubscribeForSymbol);
+      addSymbolToShardGroup(group, symbol, (sym) => buildSubscribeForSymbol(marketType, sym));
     }
   });
 
   return group;
 }
 
-function connect(marketType, shard, shardIndex, broadcastCandle) {
+function connect(marketType, timeframes, shard, shardIndex, broadcastCandle) {
   const ws = new WebSocket(HOSTS[marketType]);
 
   ws.on("open", () => {
     shard.ws = ws;
-    console.log(`Binance ${marketType} relay [shard ${shardIndex}] connected — ${shard.symbols.length} symbols x ${TIMEFRAMES.length} timeframes`);
+    console.log(`Binance ${marketType} relay [shard ${shardIndex}] connected — ${shard.symbols.length} symbols x ${timeframes.length} timeframes`);
     // Read shard.symbols fresh (not a captured snapshot) so symbols added
     // live before a reconnect get re-subscribed automatically.
-    const streams = shard.symbols.flatMap((symbol) => TIMEFRAMES.map((tf) => `${symbol.toLowerCase()}@kline_${tf}`));
+    const streams = shard.symbols.flatMap((symbol) => timeframes.map((tf) => `${symbol.toLowerCase()}@kline_${tf}`));
     let id = 1;
     for (let i = 0; i < streams.length; i += 50) {
       ws.send(JSON.stringify({ method: "SUBSCRIBE", params: streams.slice(i, i + 50), id: id++ }));
@@ -100,7 +102,7 @@ function connect(marketType, shard, shardIndex, broadcastCandle) {
   ws.on("close", () => {
     shard.ws = null;
     console.warn(`Binance ${marketType} relay [shard ${shardIndex}] disconnected — reconnecting in ${RECONNECT_DELAY_MS}ms`);
-    setTimeout(() => connect(marketType, shard, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
+    setTimeout(() => connect(marketType, timeframes, shard, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
   });
 
   ws.on("error", (err) => {

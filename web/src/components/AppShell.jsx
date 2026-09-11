@@ -14,6 +14,7 @@ import { TradingChart } from "./Chart.jsx";
 import { AdSlot } from "./AdSlot.jsx";
 import { IndicatorPicker } from "./IndicatorPicker.jsx";
 import { INDICATOR_CATALOG } from "../lib/indicatorCatalog.js";
+import { timeframesFor, ALL_TIMEFRAMES } from "../lib/timeframeCapability.js";
 
 // Each indicator now carries its own config (period, color, etc.), not just
 // an on/off flag — this is what makes the settings popover possible.
@@ -277,6 +278,9 @@ function drawingsStorageKey(activeSymbol, tf) {
 }
 function indicatorConfigStorageKey() {
   return "unblocked.indicators.v1";
+}
+function customTimeframesStorageKey() {
+  return "unblocked.customTimeframes.v1";
 }
 
 function loadJSON(key, fallback) {
@@ -824,6 +828,160 @@ function SelectionToolbar({ drawing, anchor, onChangeColor, onChangeWidth, onDup
   );
 }
 
+const QUICK_TIMEFRAMES = ["1m", "15m", "1h", "4h", "1d"];
+const TF_UI_TO_UNIT = { seconds: "s", minutes: "m", hours: "h", days: "d", weeks: "w", months: "M" };
+
+// Modal for adding an arbitrary custom interval (e.g. "13 hours", "7
+// minutes") — synthesized server-side by rolling up 1-minute candles (see
+// server/src/services/aggregate.js), the same technique TradingView
+// itself uses for any interval an exchange doesn't natively offer.
+function AddCustomIntervalModal({ onAdd, onClose }) {
+  const [type, setType] = useState("minutes");
+  const [interval, setInterval_] = useState("");
+
+  const submit = () => {
+    const n = Number(interval);
+    if (!Number.isInteger(n) || n < 1) return;
+    onAdd(`${n}${TF_UI_TO_UNIT[type]}`);
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#000000AA", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#191F2A", border: "1px solid #2A3140", borderRadius: 10, width: 320, padding: 20, display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 12px 32px rgba(0,0,0,0.5)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#E8EAED", fontFamily: "'Manrope', sans-serif" }}>Add custom interval</div>
+          <span onClick={onClose} style={{ cursor: "pointer", color: "#8B93A3", fontSize: 16 }}>✕</span>
+        </div>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace" }}>
+          Type
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value)}
+            style={{ background: "#0B0E14", border: "1px solid #2A3140", borderRadius: 6, color: "#E8EAED", padding: "8px 10px", fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }}
+          >
+            {Object.keys(TF_UI_TO_UNIT).map((u) => (
+              <option key={u} value={u}>{u}</option>
+            ))}
+          </select>
+        </label>
+
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace" }}>
+          Interval
+          <input
+            type="number"
+            min={1}
+            value={interval}
+            onChange={(e) => setInterval_(e.target.value)}
+            placeholder="e.g. 7"
+            style={{ background: "#0B0E14", border: "1px solid #2A3140", borderRadius: 6, color: "#E8EAED", padding: "8px 10px", fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }}
+          />
+        </label>
+
+        <div style={{ fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.5 }}>
+          Synthesized from 1-minute candles — history available for up to 90 days back, live-updating from the moment it's added.
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
+          <button onClick={onClose} style={{ background: "transparent", border: "1px solid #2A3140", color: "#8B93A3", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}>Cancel</button>
+          <button onClick={submit} disabled={!interval} style={{ background: interval ? "#F5B700" : "#2A3140", border: "none", color: interval ? "#0B0E14" : "#4A5063", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: interval ? "pointer" : "default", fontWeight: 700 }}>Add</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Timeframe row — a fixed quick-access set of 5, plus a "more" dropdown
+// covering the rest of the canonical range and any custom intervals the
+// user has added. Anything not natively offered by the active symbol's
+// exchange (marked "~", e.g. Bybit's missing 8h/3d, or a fully custom
+// size like "7m") is synthesized from 1-minute candles server-side (see
+// server/src/routes/candles.js), so every entry here is always
+// selectable regardless of which exchange is active.
+function TimeframeRow({ symbol, tf, onSelect, customTimeframes, onAddCustom, onRemoveCustom }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const ref = useRef(null);
+
+  const nativeSupported = symbol ? timeframesFor(symbol.exchange, symbol.marketType) : QUICK_TIMEFRAMES;
+  const overflow = ALL_TIMEFRAMES.filter((t) => !QUICK_TIMEFRAMES.includes(t));
+  const pinned = !QUICK_TIMEFRAMES.includes(tf) ? [tf] : [];
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setMoreOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const btnStyle = (active) => ({
+    background: active ? "#191F2A" : "transparent",
+    color: active ? "#F5B700" : "#8B93A3",
+    border: "1px solid " + (active ? "#2A3140" : "transparent"),
+    borderRadius: 6, padding: "5px 9px", fontSize: 12,
+    fontFamily: "'JetBrains Mono', monospace", cursor: "pointer",
+  });
+
+  return (
+    <div ref={ref} style={{ display: "flex", gap: 4, position: "relative", alignItems: "center" }}>
+      {[...QUICK_TIMEFRAMES, ...pinned].map((t) => (
+        <button key={t} onClick={() => onSelect(t)} style={btnStyle(tf === t)}>{t}</button>
+      ))}
+      <button onClick={() => setMoreOpen((o) => !o)} style={btnStyle(moreOpen)}>more ▾</button>
+
+      {moreOpen && (
+        <div style={{ position: "absolute", top: "110%", left: 0, zIndex: 30, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, padding: 8, width: 240, maxHeight: 320, overflow: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+          <div
+            onClick={() => { setModalOpen(true); setMoreOpen(false); }}
+            style={{ padding: "8px 6px", cursor: "pointer", color: "#F5B700", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", borderBottom: "1px solid #232A38", marginBottom: 6 }}
+          >
+            + Add custom interval...
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {overflow.map((t) => {
+              const native = nativeSupported.includes(t);
+              return (
+                <button
+                  key={t}
+                  onClick={() => { onSelect(t); setMoreOpen(false); }}
+                  title={native ? undefined : "Synthesized from 1-minute candles (this exchange has no native candle at this size)"}
+                  style={btnStyle(tf === t)}
+                >
+                  {native ? t : `~${t}`}
+                </button>
+              );
+            })}
+          </div>
+
+          {customTimeframes.length > 0 && (
+            <>
+              <div style={{ fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1, margin: "10px 0 6px", borderTop: "1px solid #232A38", paddingTop: 8 }}>CUSTOM</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {customTimeframes.map((t) => (
+                  <div key={t} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                    <button onClick={() => { onSelect(t); setMoreOpen(false); }} style={btnStyle(tf === t)}>{t}</button>
+                    <span onClick={() => onRemoveCustom(t)} title="Remove" style={{ cursor: "pointer", color: "#4A5063", fontSize: 13, padding: "0 4px" }}>🗑</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {modalOpen && (
+        <AddCustomIntervalModal
+          onAdd={(newTf) => { onAddCustom(newTf); onSelect(newTf); }}
+          onClose={() => setModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 export function AppShell({ onBack }) {
   const [symbols, setSymbols] = useState([]);
   const [symbolsError, setSymbolsError] = useState(null);
@@ -840,6 +998,7 @@ export function AppShell({ onBack }) {
     Object.keys(defaults).forEach((k) => { merged[k] = { ...defaults[k], ...(saved[k] || {}) }; });
     return merged;
   });
+  const [customTimeframes, setCustomTimeframes] = useState(() => loadJSON(customTimeframesStorageKey(), []));
 
   const [drawTool, setDrawTool] = useState(null);
   const [drawings, setDrawings] = useState([]);
@@ -894,6 +1053,17 @@ export function AppShell({ onBack }) {
       // same as above
     }
   }, [indicatorConfig]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(customTimeframesStorageKey(), JSON.stringify(customTimeframes));
+    } catch {
+      // same as above
+    }
+  }, [customTimeframes]);
+
+  const addCustomTimeframe = (t) => setCustomTimeframes((prev) => (prev.includes(t) ? prev : [...prev, t]));
+  const removeCustomTimeframe = (t) => setCustomTimeframes((prev) => prev.filter((x) => x !== t));
 
   const closes = candles.map((c) => c.c);
   const cfg = indicatorConfig;
@@ -1290,13 +1460,14 @@ export function AppShell({ onBack }) {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 4 }}>
-            {["1m", "15m", "1h", "4h", "1d"].map((t) => (
-              <button key={t} onClick={() => setTf(t)} style={{ background: tf === t ? "#191F2A" : "transparent", color: tf === t ? "#F5B700" : "#8B93A3", border: "1px solid " + (tf === t ? "#2A3140" : "transparent"), borderRadius: 6, padding: "5px 9px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}>
-                {t}
-              </button>
-            ))}
-          </div>
+          <TimeframeRow
+            symbol={activeSymbol}
+            tf={tf}
+            onSelect={setTf}
+            customTimeframes={customTimeframes}
+            onAddCustom={addCustomTimeframe}
+            onRemoveCustom={removeCustomTimeframe}
+          />
           <div style={{ width: 1, height: 18, background: "#1D232F" }} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             {Object.entries(INDICATOR_DEFS)
