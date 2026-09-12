@@ -1,4 +1,11 @@
 // Bybit V5 unified WebSocket — spot and linear (USDT-margined) perpetuals.
+//
+// *** TEMPORARY DIAGNOSTIC LOGGING ADDED — see lines marked [DIAG] ***
+// See binance.js's file header for the full rationale — same instrumentation
+// pattern here: a per-shard message heartbeat plus explicit write
+// attempt/success logging. Remove all [DIAG] lines once the root cause of
+// the week-long write silence is found and fixed.
+//
 // Verified against Bybit's public API docs (bybit-exchange.github.io).
 //
 // Bybit's kline interval strings differ from Binance's ("60" not "1h", "D"
@@ -19,6 +26,7 @@ import { timeframesFor } from "../timeframes.js";
 
 const RECONNECT_DELAY_MS = 5000;
 const PING_INTERVAL_MS = 20000;
+const DIAG_HEARTBEAT_MS = 30000; // [DIAG]
 
 const HOSTS = {
   spot: "wss://stream.bybit.com/v5/public/spot",
@@ -31,8 +39,6 @@ const TF_TO_BYBIT = {
   "1d": "D", "1w": "W", "1M": "M",
 };
 const BYBIT_TO_TF = Object.fromEntries(Object.entries(TF_TO_BYBIT).map(([tf, b]) => [b, tf]));
-// timeframesFor already reflects exactly what Bybit supports (spot and
-// perp are identical on Bybit), so it's the single source of truth here.
 
 function buildSubscribeForSymbol(marketType, symbol) {
   const args = timeframesFor("bybit", marketType).map((tf) => `kline.${TF_TO_BYBIT[tf]}.${symbol}`);
@@ -65,6 +71,14 @@ export async function startBybitRelay({ marketType, broadcastCandle }) {
 function connect(marketType, timeframes, shard, shardIndex, broadcastCandle) {
   const ws = new WebSocket(HOSTS[marketType]);
   let pingTimer;
+  let msgCount = 0; // [DIAG]
+  let klineCount = 0; // [DIAG]
+
+  const heartbeat = setInterval(() => { // [DIAG]
+    console.log(`[DIAG] Bybit ${marketType} [shard ${shardIndex}]: ${msgCount} raw messages, ${klineCount} kline events in last ${DIAG_HEARTBEAT_MS / 1000}s`);
+    msgCount = 0;
+    klineCount = 0;
+  }, DIAG_HEARTBEAT_MS); // [DIAG]
 
   ws.on("open", () => {
     shard.ws = ws;
@@ -73,31 +87,42 @@ function connect(marketType, timeframes, shard, shardIndex, broadcastCandle) {
     for (let i = 0; i < args.length; i += 50) {
       ws.send(JSON.stringify({ op: "subscribe", args: args.slice(i, i + 50) }));
     }
+    console.log(`[DIAG] Bybit ${marketType} [shard ${shardIndex}]: sent ${Math.ceil(args.length / 50)} subscribe message(s) covering ${args.length} topics`); // [DIAG]
     pingTimer = setInterval(() => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ op: "ping" }));
     }, PING_INTERVAL_MS);
   });
 
   ws.on("message", async (raw) => {
+    msgCount++; // [DIAG]
     let msg;
     try {
       msg = JSON.parse(raw.toString());
-    } catch {
+    } catch (err) {
+      console.log(`[DIAG] Bybit ${marketType} [shard ${shardIndex}]: non-JSON message, ${err.message}`); // [DIAG]
       return;
     }
-    if (!msg.topic?.startsWith("kline.") || !Array.isArray(msg.data)) return;
+    if (!msg.topic?.startsWith("kline.") || !Array.isArray(msg.data)) {
+      if (msg.op !== "pong" && msg.op !== "subscribe" && msg.success === undefined) {
+        console.log(`[DIAG] Bybit ${marketType} [shard ${shardIndex}]: unrecognized message shape:`, JSON.stringify(msg).slice(0, 200)); // [DIAG]
+      }
+      return;
+    }
 
     const [, bybitInterval, symbol] = msg.topic.split(".");
     const timeframe = BYBIT_TO_TF[bybitInterval];
     if (!timeframe) return;
+    klineCount++; // [DIAG]
 
     for (const k of msg.data) {
       const candle = { openTime: Number(k.start), o: Number(k.open), h: Number(k.high), l: Number(k.low), c: Number(k.close), v: Number(k.volume) };
       broadcastCandle("bybit", marketType, symbol, timeframe, candle, k.confirm);
 
       if (k.confirm) {
+        console.log(`[DIAG] Bybit ${marketType} [shard ${shardIndex}]: candle CLOSE detected ${symbol} ${timeframe} @${candle.openTime} — attempting write`); // [DIAG]
         try {
           await upsertCandle({ exchange: "bybit", marketType, symbol, timeframe, openTimeMs: candle.openTime, o: candle.o, h: candle.h, l: candle.l, c: candle.c, v: candle.v });
+          console.log(`[DIAG] Bybit ${marketType} [shard ${shardIndex}]: write SUCCEEDED ${symbol} ${timeframe} @${candle.openTime}`); // [DIAG]
         } catch (err) {
           console.error(`Failed to write bybit/${marketType} candle ${symbol} ${timeframe}`, err);
         }
@@ -108,6 +133,7 @@ function connect(marketType, timeframes, shard, shardIndex, broadcastCandle) {
   ws.on("close", () => {
     shard.ws = null;
     clearInterval(pingTimer);
+    clearInterval(heartbeat); // [DIAG]
     console.warn(`Bybit ${marketType} relay [shard ${shardIndex}] disconnected — reconnecting in ${RECONNECT_DELAY_MS}ms`);
     setTimeout(() => connect(marketType, timeframes, shard, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
   });

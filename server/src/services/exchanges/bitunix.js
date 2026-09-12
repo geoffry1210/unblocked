@@ -2,6 +2,11 @@
 // no spot public WS endpoint was found in their docs). Verified against
 // bitunix.com/api-docs/futures/websocket.
 //
+// *** TEMPORARY DIAGNOSTIC LOGGING ADDED — see lines marked [DIAG] ***
+// See binance.js's file header for the full rationale — same instrumentation
+// pattern here. Remove all [DIAG] lines once the root cause of the
+// week-long write silence is found and fixed.
+//
 // IMPORTANT DIFFERENCE FROM BINANCE/BYBIT: Bitunix's kline push message
 // carries only a push timestamp (`ts`) and the current OHLCV for that
 // timestamp — no candle open-time and no "closed"/"confirm" flag. Candle
@@ -31,6 +36,7 @@ import { timeframesFor } from "../timeframes.js";
 
 const RECONNECT_DELAY_MS = 5000;
 const PING_INTERVAL_MS = 20000;
+const DIAG_HEARTBEAT_MS = 30000; // [DIAG]
 const WS_URL = "wss://fapi.bitunix.com/public/";
 
 const TF_TO_CHANNEL = {
@@ -48,9 +54,6 @@ const TF_TO_MS = {
   "8h": 28_800_000, "12h": 43_200_000, "1d": 86_400_000, "3d": 259_200_000,
   "1w": 604_800_000,
 };
-// The live-streamable set — everything Bitunix supports minus 1M (see
-// header comment). Backfill uses the full set from timeframesFor directly
-// since it doesn't go through this bucket-inference logic at all.
 const TIMEFRAMES = timeframesFor("bitunix", "perp").filter((tf) => tf !== "1M");
 
 function buildSubscribeForSymbol(symbol) {
@@ -83,9 +86,15 @@ export async function startBitunixRelay({ broadcastCandle }) {
 function connect(shard, shardIndex, broadcastCandle) {
   const ws = new WebSocket(WS_URL);
   let pingTimer;
-  // key `${symbol}:${tf}` -> last seen {bucket, candle}, so we can detect
-  // when a new bucket starts and treat the prior one as closed.
   const lastSeen = new Map();
+  let msgCount = 0; // [DIAG]
+  let klineCount = 0; // [DIAG]
+
+  const heartbeat = setInterval(() => { // [DIAG]
+    console.log(`[DIAG] Bitunix perp [shard ${shardIndex}]: ${msgCount} raw messages, ${klineCount} kline events in last ${DIAG_HEARTBEAT_MS / 1000}s`);
+    msgCount = 0;
+    klineCount = 0;
+  }, DIAG_HEARTBEAT_MS); // [DIAG]
 
   ws.on("open", () => {
     shard.ws = ws;
@@ -94,20 +103,29 @@ function connect(shard, shardIndex, broadcastCandle) {
     for (let i = 0; i < args.length; i += 50) {
       ws.send(JSON.stringify({ op: "subscribe", args: args.slice(i, i + 50) }));
     }
+    console.log(`[DIAG] Bitunix perp [shard ${shardIndex}]: sent ${Math.ceil(args.length / 50)} subscribe message(s) covering ${args.length} channels`); // [DIAG]
     pingTimer = setInterval(() => {
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ op: "ping", ping: Math.floor(Date.now() / 1000) }));
     }, PING_INTERVAL_MS);
   });
 
   ws.on("message", async (raw) => {
+    msgCount++; // [DIAG]
     let msg;
     try {
       msg = JSON.parse(raw.toString());
-    } catch {
+    } catch (err) {
+      console.log(`[DIAG] Bitunix perp [shard ${shardIndex}]: non-JSON message, ${err.message}`); // [DIAG]
       return;
     }
     const tf = CHANNEL_TO_TF[msg.ch];
-    if (!tf || !msg.data || !msg.symbol) return;
+    if (!tf || !msg.data || !msg.symbol) {
+      if (msg.op !== "pong" && msg.op !== "subscribe" && msg.success === undefined) {
+        console.log(`[DIAG] Bitunix perp [shard ${shardIndex}]: unrecognized message shape:`, JSON.stringify(msg).slice(0, 200)); // [DIAG]
+      }
+      return;
+    }
+    klineCount++; // [DIAG]
 
     const symbol = msg.symbol;
     const intervalMs = TF_TO_MS[tf];
@@ -120,8 +138,10 @@ function connect(shard, shardIndex, broadcastCandle) {
 
     if (prev && prev.bucket !== bucket) {
       broadcastCandle("bitunix", "perp", symbol, tf, prev.candle, true);
+      console.log(`[DIAG] Bitunix perp [shard ${shardIndex}]: candle CLOSE (bucket rollover) detected ${symbol} ${tf} @${prev.candle.openTime} — attempting write`); // [DIAG]
       try {
         await upsertCandle({ exchange: "bitunix", marketType: "perp", symbol, timeframe: tf, openTimeMs: prev.candle.openTime, o: prev.candle.o, h: prev.candle.h, l: prev.candle.l, c: prev.candle.c, v: prev.candle.v });
+        console.log(`[DIAG] Bitunix perp [shard ${shardIndex}]: write SUCCEEDED ${symbol} ${tf} @${prev.candle.openTime}`); // [DIAG]
       } catch (err) {
         console.error(`Failed to write bitunix/perp candle ${symbol} ${tf}`, err);
       }
@@ -132,6 +152,7 @@ function connect(shard, shardIndex, broadcastCandle) {
   ws.on("close", () => {
     shard.ws = null;
     clearInterval(pingTimer);
+    clearInterval(heartbeat); // [DIAG]
     console.warn(`Bitunix perp relay [shard ${shardIndex}] disconnected — reconnecting in ${RECONNECT_DELAY_MS}ms`);
     setTimeout(() => connect(shard, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
   });

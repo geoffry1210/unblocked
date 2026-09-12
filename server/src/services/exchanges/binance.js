@@ -1,5 +1,16 @@
 // Binance — spot and USDT-margined perpetual futures.
 //
+// *** TEMPORARY DIAGNOSTIC LOGGING ADDED — see lines marked [DIAG] ***
+// No candle has been written to the DB from ANY exchange since Sep 5,
+// with zero errors logged since Sep 8 — meaning something is silently
+// preventing writes rather than throwing. This instrumentation will show
+// exactly which stage breaks: (1) a per-shard message-count heartbeat
+// every 30s proves whether raw WS messages are arriving at all, and (2) an
+// explicit log both right before AND right after each upsertCandle call
+// proves whether candle-close detection fires and whether the write
+// itself actually completes. Remove all [DIAG] lines once the root cause
+// is found and fixed.
+//
 // Both products expose the identical combined-stream kline schema; only the
 // WebSocket host differs (spot: stream.binance.com, perp: fstream.binance.com).
 // Interval strings match ours exactly (1s,1m,3m,...,1M) — spot supports the
@@ -23,6 +34,7 @@ import { onActivation } from "../activationBus.js";
 import { timeframesFor } from "../timeframes.js";
 
 const RECONNECT_DELAY_MS = 5000;
+const DIAG_HEARTBEAT_MS = 30000; // [DIAG]
 
 const HOSTS = {
   spot: "wss://stream.binance.com:9443/stream",
@@ -48,8 +60,6 @@ export async function startBinanceRelay({ marketType, broadcastCandle }) {
     { label: `Binance ${marketType} relay` }
   );
 
-  // Symbols activated after startup (someone views a pair that wasn't
-  // already active) get subscribed live instead of waiting for a restart.
   onActivation(({ exchange, marketType: mt, symbol }) => {
     if (exchange === "binance" && mt === marketType) {
       addSymbolToShardGroup(group, symbol, (sym) => buildSubscribeForSymbol(marketType, sym));
@@ -61,28 +71,43 @@ export async function startBinanceRelay({ marketType, broadcastCandle }) {
 
 function connect(marketType, timeframes, shard, shardIndex, broadcastCandle) {
   const ws = new WebSocket(HOSTS[marketType]);
+  let msgCount = 0; // [DIAG]
+  let klineCount = 0; // [DIAG]
+
+  const heartbeat = setInterval(() => { // [DIAG]
+    console.log(`[DIAG] Binance ${marketType} [shard ${shardIndex}]: ${msgCount} raw messages, ${klineCount} kline events in last ${DIAG_HEARTBEAT_MS / 1000}s`);
+    msgCount = 0;
+    klineCount = 0;
+  }, DIAG_HEARTBEAT_MS); // [DIAG]
 
   ws.on("open", () => {
     shard.ws = ws;
     console.log(`Binance ${marketType} relay [shard ${shardIndex}] connected — ${shard.symbols.length} symbols x ${timeframes.length} timeframes`);
-    // Read shard.symbols fresh (not a captured snapshot) so symbols added
-    // live before a reconnect get re-subscribed automatically.
     const streams = shard.symbols.flatMap((symbol) => timeframes.map((tf) => `${symbol.toLowerCase()}@kline_${tf}`));
     let id = 1;
     for (let i = 0; i < streams.length; i += 50) {
       ws.send(JSON.stringify({ method: "SUBSCRIBE", params: streams.slice(i, i + 50), id: id++ }));
     }
+    console.log(`[DIAG] Binance ${marketType} [shard ${shardIndex}]: sent ${Math.ceil(streams.length / 50)} SUBSCRIBE message(s) covering ${streams.length} streams`); // [DIAG]
   });
 
   ws.on("message", async (raw) => {
+    msgCount++; // [DIAG]
     let msg;
     try {
       msg = JSON.parse(raw.toString());
-    } catch {
+    } catch (err) {
+      console.log(`[DIAG] Binance ${marketType} [shard ${shardIndex}]: non-JSON message, ${err.message}`); // [DIAG]
       return;
     }
     const k = msg.data?.k;
-    if (!k) return;
+    if (!k) {
+      if (msg.result === undefined && msg.id === undefined) {
+        console.log(`[DIAG] Binance ${marketType} [shard ${shardIndex}]: message with no k and no ack shape:`, JSON.stringify(msg).slice(0, 200)); // [DIAG]
+      }
+      return;
+    }
+    klineCount++; // [DIAG]
 
     const symbol = k.s;
     const timeframe = k.i;
@@ -91,8 +116,10 @@ function connect(marketType, timeframes, shard, shardIndex, broadcastCandle) {
     broadcastCandle("binance", marketType, symbol, timeframe, candle, k.x);
 
     if (k.x) {
+      console.log(`[DIAG] Binance ${marketType} [shard ${shardIndex}]: candle CLOSE detected ${symbol} ${timeframe} @${k.t} — attempting write`); // [DIAG]
       try {
         await upsertCandle({ exchange: "binance", marketType, symbol, timeframe, openTimeMs: k.t, o: candle.o, h: candle.h, l: candle.l, c: candle.c, v: candle.v });
+        console.log(`[DIAG] Binance ${marketType} [shard ${shardIndex}]: write SUCCEEDED ${symbol} ${timeframe} @${k.t}`); // [DIAG]
       } catch (err) {
         console.error(`Failed to write binance/${marketType} candle ${symbol} ${timeframe}`, err);
       }
@@ -101,6 +128,7 @@ function connect(marketType, timeframes, shard, shardIndex, broadcastCandle) {
 
   ws.on("close", () => {
     shard.ws = null;
+    clearInterval(heartbeat); // [DIAG]
     console.warn(`Binance ${marketType} relay [shard ${shardIndex}] disconnected — reconnecting in ${RECONNECT_DELAY_MS}ms`);
     setTimeout(() => connect(marketType, timeframes, shard, shardIndex, broadcastCandle), RECONNECT_DELAY_MS);
   });
