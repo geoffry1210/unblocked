@@ -282,6 +282,12 @@ function indicatorConfigStorageKey() {
 function customTimeframesStorageKey() {
   return "unblocked.customTimeframes.v1";
 }
+function toolFavoritesStorageKey() {
+  return "unblocked.favoriteTools.v1";
+}
+function toolStyleMemoryStorageKey() {
+  return "unblocked.toolStyleMemory.v1";
+}
 
 function loadJSON(key, fallback) {
   try {
@@ -706,7 +712,7 @@ function IndicatorChip({ indKey, def, cfg, onToggle, onChange, onDuplicate, onRe
   );
 }
 
-function ToolGroupDropdown({ group, activeTool, onSelect, direction = "down" }) {
+function ToolGroupDropdown({ group, activeTool, onSelect, direction = "down", favoriteTools = [], onToggleFavorite }) {
   const [open, setOpen] = useState(false);
   // The rail button shows whichever tool was last picked from this group —
   // matching TradingView, where the rail icon always reflects a specific
@@ -762,22 +768,65 @@ function ToolGroupDropdown({ group, activeTool, onSelect, direction = "down" }) 
       {open && (
         <div style={{ position: "absolute", ...flyoutStyle, zIndex: 30, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, width: 210, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
           <div style={{ padding: "6px 12px", fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1, borderBottom: "1px solid #232A38" }}>{group.label.toUpperCase()}</div>
-          {group.tools.map((t) => (
-            <div
-              key={t.key}
-              onClick={() => pick(t)}
-              style={{
-                display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", cursor: "pointer",
-                background: activeTool === t.key ? "#F5B70011" : "transparent",
-              }}
-            >
-              <span style={{ width: 18, textAlign: "center", fontSize: 14, color: activeTool === t.key ? "#F5B700" : "#8B93A3" }}>{TOOL_ICONS[t.key] || "?"}</span>
-              <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: activeTool === t.key ? "#F5B700" : "#E8EAED" }}>{t.label}</span>
-            </div>
-          ))}
+          {group.tools.map((t) => {
+            const isFav = favoriteTools.includes(t.key);
+            return (
+              <div
+                key={t.key}
+                onClick={() => pick(t)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", cursor: "pointer",
+                  background: activeTool === t.key ? "#F5B70011" : "transparent",
+                }}
+              >
+                <span style={{ width: 18, textAlign: "center", fontSize: 14, color: activeTool === t.key ? "#F5B700" : "#8B93A3" }}>{TOOL_ICONS[t.key] || "?"}</span>
+                <span style={{ flex: 1, fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: activeTool === t.key ? "#F5B700" : "#E8EAED" }}>{t.label}</span>
+                <span
+                  onClick={(e) => { e.stopPropagation(); onToggleFavorite && onToggleFavorite(t.key); }}
+                  title={isFav ? "Remove from favorites" : "Add to favorites"}
+                  style={{ fontSize: 13, color: isFav ? "#F5B700" : "#4A5063", cursor: "pointer", padding: "0 2px" }}
+                >
+                  {isFav ? "★" : "☆"}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
+  );
+}
+
+// Starred tools render as direct one-tap icons at the top of the vertical
+// rail, above the group icons — matching TradingView's own favorites bar.
+// Bypasses the flyout entirely: one tap activates the tool immediately.
+function FavoritesRow({ favoriteTools, activeTool, onSelect }) {
+  if (favoriteTools.length === 0) return null;
+  const favDefs = favoriteTools
+    .map((key) => ALL_DRAW_TOOLS.find((t) => t.key === key))
+    .filter(Boolean);
+  if (favDefs.length === 0) return null;
+  return (
+    <>
+      {favDefs.map((t) => (
+        <button
+          key={t.key}
+          onClick={() => onSelect(t.key)}
+          title={`${t.label} (favorite)`}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px",
+            fontSize: 14, cursor: "pointer",
+            background: activeTool === t.key ? "#F5B70022" : "transparent",
+            color: activeTool === t.key ? "#F5B700" : "#8B93A3",
+            border: "1px solid " + (activeTool === t.key ? "#F5B70055" : "#232A38"),
+            borderRadius: 6,
+          }}
+        >
+          {TOOL_ICONS[t.key] || "★"}
+        </button>
+      ))}
+      <div style={{ width: "70%", height: 1, background: "#1D232F", margin: "4px 0" }} />
+    </>
   );
 }
 
@@ -1034,6 +1083,11 @@ export function AppShell({ onBack }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [selectionAnchor, setSelectionAnchor] = useState(null);
+  const [favoriteTools, setFavoriteTools] = useState(() => loadJSON(toolFavoritesStorageKey(), []));
+  // Per-tool-type style memory — e.g. toolStyleMemory.trendline = { color, width }
+  // — so re-picking a tool pre-fills whatever color/width was last used for
+  // that tool, instead of always resetting to the hardcoded default.
+  const [toolStyleMemory, setToolStyleMemory] = useState(() => loadJSON(toolStyleMemoryStorageKey(), {}));
 
   useEffect(() => {
     fetchSymbols()
@@ -1086,6 +1140,26 @@ export function AppShell({ onBack }) {
       // same as above
     }
   }, [customTimeframes]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(toolFavoritesStorageKey(), JSON.stringify(favoriteTools));
+    } catch {
+      // same as above
+    }
+  }, [favoriteTools]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(toolStyleMemoryStorageKey(), JSON.stringify(toolStyleMemory));
+    } catch {
+      // same as above
+    }
+  }, [toolStyleMemory]);
+
+  const toggleFavoriteTool = (key) => {
+    setFavoriteTools((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  };
 
   const addCustomTimeframe = (t) => setCustomTimeframes((prev) => (prev.includes(t) ? prev : [...prev, t]));
   const removeCustomTimeframe = (t) => setCustomTimeframes((prev) => prev.filter((x) => x !== t));
@@ -1322,7 +1396,7 @@ export function AppShell({ onBack }) {
     if (drawTool === "text") {
       const text = window.prompt("Note text:");
       if (text) {
-        setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: "text", points: [point], text, color: "#E8EAED" }]);
+        setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: "text", points: [point], text, color: toolStyleMemory.text?.color || "#E8EAED" }]);
       }
       setDrawTool(null);
       return;
@@ -1341,7 +1415,7 @@ export function AppShell({ onBack }) {
     if (nextPoints.length < toolDef.clicksNeeded) {
       setPendingPoints(nextPoints);
     } else {
-      setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: drawTool, points: nextPoints }]);
+      setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: drawTool, points: nextPoints, ...(toolStyleMemory[drawTool] || {}) }]);
       setPendingPoints([]);
       setDrawTool(null);
     }
@@ -1349,7 +1423,7 @@ export function AppShell({ onBack }) {
 
   const finishUnlimitedDrawing = () => {
     if (pendingPoints.length >= 2) {
-      setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: drawTool, points: pendingPoints }]);
+      setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: drawTool, points: pendingPoints, ...(toolStyleMemory[drawTool] || {}) }]);
     }
     setPendingPoints([]);
     setDrawTool(null);
@@ -1366,7 +1440,9 @@ export function AppShell({ onBack }) {
   // once the gesture ends — bypassing the click-by-click flow entirely.
   const handleFreehandComplete = (points) => {
     if (points.length < 2) return;
-    setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: drawTool, points, color: drawTool === "highlighter" ? "#F5B70066" : "#F5B700" }]);
+    const remembered = toolStyleMemory[drawTool];
+    const defaultColor = drawTool === "highlighter" ? "#F5B70066" : "#F5B700";
+    setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: drawTool, points, color: remembered?.color || defaultColor, ...(remembered?.width ? { width: remembered.width } : {}) }]);
     setDrawTool(null);
   };
 
@@ -1391,11 +1467,17 @@ export function AppShell({ onBack }) {
   const handleSelectionColorChange = (color) => {
     if (!selectedId) return;
     setDrawings((prev) => prev.map((d) => (d.id === selectedId ? { ...d, color } : d)));
+    if (selectedDrawing) {
+      setToolStyleMemory((prev) => ({ ...prev, [selectedDrawing.type]: { ...prev[selectedDrawing.type], color } }));
+    }
   };
 
   const handleSelectionWidthChange = (width) => {
     if (!selectedId) return;
     setDrawings((prev) => prev.map((d) => (d.id === selectedId ? { ...d, width } : d)));
+    if (selectedDrawing) {
+      setToolStyleMemory((prev) => ({ ...prev, [selectedDrawing.type]: { ...prev[selectedDrawing.type], width } }));
+    }
   };
 
   const handleDuplicateSelection = () => {
@@ -1486,8 +1568,18 @@ export function AppShell({ onBack }) {
             ⊹
           </button>
 
+          <FavoritesRow favoriteTools={favoriteTools} activeTool={drawTool} onSelect={selectDrawTool} />
+
           {DRAW_GROUPS.map((group) => (
-            <ToolGroupDropdown key={group.key} group={group} activeTool={drawTool} onSelect={selectDrawTool} direction="right" />
+            <ToolGroupDropdown
+              key={group.key}
+              group={group}
+              activeTool={drawTool}
+              onSelect={selectDrawTool}
+              direction="right"
+              favoriteTools={favoriteTools}
+              onToggleFavorite={toggleFavoriteTool}
+            />
           ))}
 
           <div style={{ width: "70%", height: 1, background: "#1D232F", margin: "4px 0" }} />
