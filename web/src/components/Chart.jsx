@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries } from "lightweight-charts";
 
 const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
@@ -113,6 +113,15 @@ function toBoundsData(candles, min, max) {
  * dragging the body translates the whole shape (onDrawingChange). The
  * selection's on-screen anchor is reported via onSelectionAnchor so the
  * parent can position a floating toolbar next to it.
+ *
+ * Legend overlays (new): priceOverlay renders top-right of the main pane
+ * (the live price/change readout, moved off the header and onto the
+ * chart itself, TradingView-style). mainLegend is a stack of chips for
+ * overlay-type indicators (MA/EMA/BB/...), pinned top-left of the main
+ * pane just below the price. paneLegends is an array of chips aligned
+ * 1:1 with indicatorPanes — each one is pinned to the top-left of its
+ * own pane, tracking that pane's actual pixel height so it stays put
+ * through resizes and as panes are added/removed.
  */
 const FIB_EXT_LEVELS = [-0.618, -0.272, 0, 0.272, 0.618, 1, 1.272, 1.618, 2, 2.618];
 const FIB_TIME_SEQUENCE = [1, 2, 3, 5, 8, 13, 21, 34, 55];
@@ -149,6 +158,9 @@ export function TradingChart({
   onSelectDrawing,
   onDrawingChange,
   onSelectionAnchor,
+  priceOverlay,
+  mainLegend,
+  paneLegends,
 }) {
   const containerRef = useRef(null);
   const overlaySvgRef = useRef(null);
@@ -173,6 +185,10 @@ export function TradingChart({
   const onSelectionAnchorRef = useRef(onSelectionAnchor);
   const drawingsRef = useRef([]); // kept current for hit-testing inside native pointer handlers
   const draggingRef = useRef(null); // { id, vertexIndex (null = whole-body drag), origPoints, startTime, startPrice }
+  // Pixel top-offset of each pane (index 0 = main pane), recomputed whenever
+  // panes are added/removed or the chart resizes — drives where each
+  // pane's legend chip is pinned.
+  const [paneOffsets, setPaneOffsets] = useState([0]);
 
   useEffect(() => {
     drawToolRef.current = drawTool;
@@ -192,6 +208,26 @@ export function TradingChart({
   useEffect(() => {
     drawingsRef.current = drawings;
   }, [drawings]);
+
+  // Recomputes each pane's pixel top-offset from its actual rendered
+  // height (chart.panes()[i].getHeight()), falling back to an even split
+  // if the API isn't available on whatever lightweight-charts build is
+  // loaded. Called after pane layout changes and on container resize.
+  const recomputePaneOffsets = () => {
+    const chart = chartRef.current;
+    const container = containerRef.current;
+    if (!chart || !container) return;
+    const panes = chart.panes();
+    const total = container.getBoundingClientRect().height || 1;
+    let cum = 0;
+    const offsets = panes.map((p) => {
+      const top = cum;
+      const h = typeof p.getHeight === "function" ? p.getHeight() : total / panes.length;
+      cum += h;
+      return top;
+    });
+    setPaneOffsets(offsets.length ? offsets : [0]);
+  };
 
   // ---- create chart once ----
   useLayoutEffect(() => {
@@ -386,7 +422,14 @@ export function TradingChart({
       }
     });
 
+    // Pane heights shift on container resize (autoSize reflows them) even
+    // when indicatorPanes itself hasn't changed — keep legend chips pinned
+    // to the right spot through that too.
+    const resizeObserver = new ResizeObserver(() => recomputePaneOffsets());
+    resizeObserver.observe(container);
+
     return () => {
+      resizeObserver.disconnect();
       container.removeEventListener("pointerdown", onPointerDown);
       container.removeEventListener("pointermove", onPointerMove);
       container.removeEventListener("pointerup", onPointerUp);
@@ -487,6 +530,14 @@ export function TradingChart({
 
     const mainPane = chart.panes()[0];
     if (mainPane) mainPane.setStretchFactor(indicatorPanes.length > 0 ? 5 : 8);
+
+    // Pane count/heights just changed — recompute legend offsets. A short
+    // delay lets lightweight-charts finish its own layout pass first, since
+    // getHeight() right after setStretchFactor can still report the old
+    // sizes within the same tick.
+    recomputePaneOffsets();
+    const t = setTimeout(recomputePaneOffsets, 50);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicatorPanes, candles]);
 
@@ -903,6 +954,37 @@ export function TradingChart({
     <div style={{ position: "relative", width: "100%", height, cursor: drawTool ? "crosshair" : "default" }}>
       <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
       <svg ref={overlaySvgRef} style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }} />
+
+      {/* Price readout — pinned top-right of the main pane, on top of the
+          candles, instead of a separate header row. */}
+      {priceOverlay && (
+        <div style={{ position: "absolute", top: 8, right: 12, zIndex: 6, pointerEvents: "none" }}>
+          {priceOverlay}
+        </div>
+      )}
+
+      {/* Overlay-type indicator legend (MA/EMA/BB/...) — stacked inside the
+          main pane, top-left, just below where the price would sit. */}
+      {mainLegend && mainLegend.length > 0 && (
+        <div style={{ position: "absolute", top: 8, left: 8, zIndex: 6, display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start", pointerEvents: "none" }}>
+          {mainLegend.map((chip, i) => (
+            <div key={i} style={{ pointerEvents: "auto" }}>{chip}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Pane-type indicator legends (RSI/MACD/...) — each chip pinned to
+          the top-left of its own pane, tracking that pane's real pixel
+          offset so it stays put as panes are added, removed, or resized. */}
+      {paneLegends && paneLegends.map((chip, i) => {
+        const top = paneOffsets[i + 1]; // offsets[0] is the main pane
+        if (top == null) return null;
+        return (
+          <div key={i} style={{ position: "absolute", top: top + 6, left: 8, zIndex: 6, pointerEvents: "auto" }}>
+            {chip}
+          </div>
+        );
+      })}
     </div>
   );
 }

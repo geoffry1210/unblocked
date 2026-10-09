@@ -1329,6 +1329,24 @@ export function AppShell({ onBack }) {
     });
   };
 
+  // Legend chips — the same IndicatorChip used to live in a single row in
+  // the header; now it's split by type and positioned directly on the
+  // chart (matching TradingView): overlay-type indicators (MA/EMA/BB/...)
+  // get a small stack inside the main pane just below the price, and
+  // pane-type indicators (RSI/MACD/...) each get their own chip pinned to
+  // the top of their own pane. `indicatorPanes` already carries `.key` per
+  // entry in the exact order Chart.jsx renders panes, so building
+  // paneLegends by mapping over it (rather than re-deriving the order from
+  // indicatorConfig) guarantees each chip lines up with its own pane.
+  const mainLegend = Object.keys(cfg)
+    .filter((key) => cfg[key]?.enabled && defFor(key)?.type === "overlay")
+    .map((key) => (
+      <IndicatorChip key={key} indKey={key} def={defFor(key)} cfg={cfg[key]} onToggle={toggleIndicator} onChange={updateIndicator} onDuplicate={duplicateIndicator} onRemove={removeIndicatorInstance} />
+    ));
+  const paneLegends = indicatorPanes.map((pane) => (
+    <IndicatorChip key={pane.key} indKey={pane.key} def={defFor(pane.key)} cfg={cfg[pane.key]} onToggle={toggleIndicator} onChange={updateIndicator} onDuplicate={duplicateIndicator} onRemove={removeIndicatorInstance} />
+  ));
+
   // Picker "add" semantics — force-enable rather than toggle, since picking
   // an indicator from search should always turn it on, even if it's
   // already enabled (re-selecting shouldn't silently turn it off).
@@ -1516,40 +1534,26 @@ export function AppShell({ onBack }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <header style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 16px", borderBottom: "1px solid #1D232F" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <button onClick={onBack} style={{ background: "none", border: "none", color: "#8B93A3", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>← back</button>
-          <SymbolSearch symbols={symbols} activeLabel={activeLabel} onSelect={setActiveSymbol} />
-          <div style={{ marginLeft: "auto" }}>
-            <PriceTicker candles={candles} connected={connected} />
-          </div>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <TimeframeRow
-            symbol={activeSymbol}
-            tf={tf}
-            onSelect={setTf}
-            customTimeframes={customTimeframes}
-            onAddCustom={addCustomTimeframe}
-            onRemoveCustom={removeCustomTimeframe}
-          />
-          <div style={{ width: 1, height: 18, background: "#1D232F" }} />
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            {Object.keys(indicatorConfig)
-              .filter((key) => indicatorConfig[key]?.enabled)
-              .map((key) => (
-                <IndicatorChip key={key} indKey={key} def={defFor(key)} cfg={indicatorConfig[key]} onToggle={toggleIndicator} onChange={updateIndicator} onDuplicate={duplicateIndicator} onRemove={removeIndicatorInstance} />
-              ))}
-            <button
-              onClick={() => setPickerOpen(true)}
-              style={{ background: "transparent", color: "#8B93A3", border: "1px solid #232A38", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}
-            >
-              + Indicators
-            </button>
-            <FavoritesDropdown onSelect={handlePickerSelect} />
-          </div>
-        </div>
+      <header style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 16px", borderBottom: "1px solid #1D232F", flexWrap: "wrap" }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "#8B93A3", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>← back</button>
+        <SymbolSearch symbols={symbols} activeLabel={activeLabel} onSelect={setActiveSymbol} />
+        <div style={{ width: 1, height: 18, background: "#1D232F" }} />
+        <TimeframeRow
+          symbol={activeSymbol}
+          tf={tf}
+          onSelect={setTf}
+          customTimeframes={customTimeframes}
+          onAddCustom={addCustomTimeframe}
+          onRemoveCustom={removeCustomTimeframe}
+        />
+        <div style={{ width: 1, height: 18, background: "#1D232F" }} />
+        <button
+          onClick={() => setPickerOpen(true)}
+          style={{ background: "transparent", color: "#8B93A3", border: "1px solid #232A38", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}
+        >
+          + Indicators
+        </button>
+        <FavoritesDropdown onSelect={handlePickerSelect} />
       </header>
 
       <div style={{ display: "flex", flex: "1 1 80%", minHeight: 0 }}>
@@ -1660,6 +1664,9 @@ export function AppShell({ onBack }) {
                 onSelectDrawing={handleSelectDrawing}
                 onDrawingChange={handleDrawingChange}
                 onSelectionAnchor={setSelectionAnchor}
+                priceOverlay={<PriceTicker candles={candles} connected={connected} />}
+                mainLegend={mainLegend}
+                paneLegends={paneLegends}
               />
               {!drawingsHidden && (
                 <SelectionToolbar
