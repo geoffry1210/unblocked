@@ -7,11 +7,22 @@ const FONT_IMPORT = `@import url('https://fonts.googleapis.com/css2?family=JetBr
 export default function App() {
   const [view, setView] = useState("landing");
   return (
-    <div style={{ width: "100%", height: "100vh", background: "#0B0E11", fontFamily: "'Manrope', sans-serif" }}>
+    <div style={{ width: "100%", height: "100vh", background: "var(--bg, #0B0E11)", fontFamily: "'Manrope', sans-serif" }}>
       <style>{`
         ${FONT_IMPORT}
+        :root {
+          --bg: #0B0E14;
+          --surface: #191F2A;
+          --surface2: #131720;
+          --border: #1D232F;
+          --border2: #232A38;
+          --border3: #2A3140;
+          --text: #E8EAED;
+          --text-dim: #8B93A3;
+          --text-faint: #4A5063;
+        }
         * { box-sizing: border-box; }
-        body { margin: 0; }
+        body { margin: 0; background: var(--bg, #0B0E14); }
         @keyframes whalePulse {
           0% { box-shadow: 0 0 0 0 rgba(124,92,255,0.55); transform: scale(1); }
           70% { box-shadow: 0 0 0 16px rgba(124,92,255,0); transform: scale(1.15); }
@@ -26,7 +37,7 @@ export default function App() {
           .symbol-sidebar {
             width: 100% !important;
             border-right: none !important;
-            border-bottom: 1px solid #1D232F;
+            border-bottom: 1px solid var(--border, #1D232F);
             display: flex !important;
             overflow-x: auto;
             overflow-y: hidden;

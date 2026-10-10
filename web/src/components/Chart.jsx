@@ -161,6 +161,10 @@ export function TradingChart({
   priceOverlay,
   mainLegend,
   paneLegends,
+  chartBg = "#0B0E14",
+  chartGrid = "#161B26",
+  chartBorder = "#1D232F",
+  chartText = "#8B93A3",
 }) {
   const containerRef = useRef(null);
   const overlaySvgRef = useRef(null);
@@ -189,6 +193,10 @@ export function TradingChart({
   // panes are added/removed or the chart resizes — drives where each
   // pane's legend chip is pinned.
   const [paneOffsets, setPaneOffsets] = useState([0]);
+  const chartBgRef = useRef(chartBg);
+  const chartGridRef = useRef(chartGrid);
+  const chartBorderRef = useRef(chartBorder);
+  const chartTextRef = useRef(chartText);
 
   useEffect(() => {
     drawToolRef.current = drawTool;
@@ -208,6 +216,27 @@ export function TradingChart({
   useEffect(() => {
     drawingsRef.current = drawings;
   }, [drawings]);
+
+  // Live theme switching — the chart itself is only created once (see the
+  // layout effect below), so a dark/light toggle after that has to reach it
+  // via applyOptions rather than a remount. Refs stay current for anything
+  // reading these colors outside React's render cycle (e.g. the selection
+  // handle fill drawn in the SVG layer).
+  useEffect(() => {
+    chartBgRef.current = chartBg;
+    chartGridRef.current = chartGrid;
+    chartBorderRef.current = chartBorder;
+    chartTextRef.current = chartText;
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.applyOptions({
+      layout: { background: { color: chartBg }, textColor: chartText },
+      grid: { vertLines: { color: chartGrid }, horzLines: { color: chartGrid } },
+      rightPriceScale: { borderColor: chartBorder },
+      timeScale: { borderColor: chartBorder },
+    });
+    redrawDrawingsRef.current();
+  }, [chartBg, chartGrid, chartBorder, chartText]);
 
   // Recomputes each pane's pixel top-offset from its actual rendered
   // height (chart.panes()[i].getHeight()), falling back to an even split
@@ -233,10 +262,10 @@ export function TradingChart({
   useLayoutEffect(() => {
     const container = containerRef.current;
     const chart = createChart(container, {
-      layout: { background: { color: "#0B0E14" }, textColor: "#8B93A3" },
-      grid: { vertLines: { color: "#161B26" }, horzLines: { color: "#161B26" } },
-      rightPriceScale: { borderColor: "#1D232F" },
-      timeScale: { borderColor: "#1D232F", timeVisible: true, secondsVisible: false },
+      layout: { background: { color: chartBgRef.current }, textColor: chartTextRef.current },
+      grid: { vertLines: { color: chartGridRef.current }, horzLines: { color: chartGridRef.current } },
+      rightPriceScale: { borderColor: chartBorderRef.current },
+      timeScale: { borderColor: chartBorderRef.current, timeVisible: true, secondsVisible: false },
       crosshair: { mode: 0 },
       autoSize: true,
     });
@@ -894,7 +923,7 @@ export function TradingChart({
           el.setAttribute("cx", p.x);
           el.setAttribute("cy", p.y);
           el.setAttribute("r", "6");
-          el.setAttribute("fill", "#0B0E14");
+          el.setAttribute("fill", chartBgRef.current);
           el.setAttribute("stroke", "#F5B700");
           el.setAttribute("stroke-width", "2");
           svg.appendChild(el);

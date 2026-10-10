@@ -31,7 +31,7 @@ const INDICATOR_DEFS = {
   // indicatorCatalog.js). All default to disabled since there are now 31
   // total; the picker's job is discovery, not pre-cluttering the toolbar.
   atr: { label: "ATR", type: "pane", defaults: { enabled: false, period: 14, color: "#FF6D00" } },
-  adx: { label: "ADX", type: "pane", defaults: { enabled: false, period: 14, color: "#8B93A3" } },
+  adx: { label: "ADX", type: "pane", defaults: { enabled: false, period: 14, color: "var(--text-dim)" } },
   aroon: { label: "Aroon", type: "pane", defaults: { enabled: false, period: 14, color: "#2ED9A0" } },
   stoch: { label: "Stochastic", type: "pane", defaults: { enabled: false, period: 14, smoothD: 3, color: "#2962FF" } },
   cci: { label: "CCI", type: "pane", defaults: { enabled: false, period: 20, color: "#F5B700" } },
@@ -70,7 +70,7 @@ const INDICATOR_DEFS = {
 const BATCH3_REGISTRY = [
   { key: "adl", label: "ADL", type: "pane", defaults: { enabled: false, color: "#4FA9FF" }, compute: (c) => batch3.adl(c), toPane: (r) => ({ lines: [{ values: r, color: "#4FA9FF" }] }) },
   { key: "alma", label: "ALMA", type: "overlay", defaults: { enabled: false, period: 9, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.alma(cl, cfg.period), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
-  { key: "bbpb", label: "BB %B", type: "pane", defaults: { enabled: false, period: 20, mult: 2, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.bbPercentB(cl, cfg.period, cfg.mult), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 1], refLines: [{ value: 0, color: "#2A3140" }, { value: 1, color: "#2A3140" }] }) },
+  { key: "bbpb", label: "BB %B", type: "pane", defaults: { enabled: false, period: 20, mult: 2, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.bbPercentB(cl, cfg.period, cfg.mult), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 1], refLines: [{ value: 0, color: "var(--border3)" }, { value: 1, color: "var(--border3)" }] }) },
   { key: "bbw", label: "BB Width", type: "pane", defaults: { enabled: false, period: 20, mult: 2, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.bbWidth(cl, cfg.period, cfg.mult), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
   { key: "chosc", label: "Chaikin Osc", type: "pane", defaults: { enabled: false, fast: 3, slow: 10, color: "#2ED9A0" }, compute: (c, cl, cfg) => batch3.chaikinOscillator(c, cfg.fast, cfg.slow), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
   { key: "chvol", label: "Chaikin Vol", type: "pane", defaults: { enabled: false, period: 10, color: "#FF9F40" }, compute: (c, cl, cfg) => batch3.chaikinVolatility(c, cfg.period, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
@@ -78,7 +78,7 @@ const BATCH3_REGISTRY = [
   { key: "cmo", label: "Chande Mom Osc", type: "pane", defaults: { enabled: false, period: 9, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.chandeMomentumOscillator(cl, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [-100, 100] }) },
   { key: "chopzone", label: "Chop Zone", type: "pane", defaults: { enabled: false, period: 14, color: "#4FA9FF" }, compute: (c, cl, cfg) => batch3.chopZone(c, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 100] }) },
   { key: "chopidx", label: "Choppiness", type: "pane", defaults: { enabled: false, period: 14, color: "#FF9F40" }, compute: (c, cl, cfg) => batch3.choppinessIndex(c, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 100] }) },
-  { key: "crsi", label: "Connors RSI", type: "pane", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c, cl) => batch3.connorsRsi(cl), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 100], refLines: [{ value: 30, color: "#2A3140" }, { value: 70, color: "#2A3140" }] }) },
+  { key: "crsi", label: "Connors RSI", type: "pane", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c, cl) => batch3.connorsRsi(cl), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }], bounds: [0, 100], refLines: [{ value: 30, color: "var(--border3)" }, { value: 70, color: "var(--border3)" }] }) },
   { key: "coppock", label: "Coppock", type: "pane", defaults: { enabled: false, color: "#F5B700" }, compute: (c, cl) => batch3.coppockCurve(cl), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
   { key: "dpo", label: "DPO", type: "pane", defaults: { enabled: false, period: 14, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.detrendedPriceOscillator(cl, cfg.period), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
   { key: "dema", label: "DEMA", type: "overlay", defaults: { enabled: false, period: 20, color: "#FF5C77" }, compute: (c, cl, cfg) => batch3.dema(cl, cfg.period), toOverlay: (r, cfg) => [{ values: r, color: cfg.color }] },
@@ -100,7 +100,7 @@ const BATCH3_REGISTRY = [
   { key: "machannel", label: "MA Channel", type: "overlay", defaults: { enabled: false, period: 20, mult: 2, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.movingAverageChannel(c, cfg.period, cfg.mult), toOverlay: (r, cfg) => [{ values: r.upper, color: cfg.color, dash: true }, { values: r.lower, color: cfg.color, dash: true }] },
   { key: "netvol", label: "Net Volume", type: "pane", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c) => batch3.netVolume(c), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
   { key: "psar", label: "Parabolic SAR", type: "overlay", defaults: { enabled: false, step: 0.02, maxStep: 0.2, color: "#F5B700" }, compute: (c, cl, cfg) => batch3.parabolicSar(c, cfg.step, cfg.maxStep), toOverlay: (r, cfg) => [{ values: r, color: cfg.color, dotted: true }] },
-  { key: "pivots", label: "Pivot Points", type: "overlay", defaults: { enabled: false, color: "#4FA9FF" }, compute: (c) => batch3.pivotPointsStandard(c), toOverlay: (r) => [{ values: r.pivot, color: "#8B93A3" }, { values: r.r1, color: "#FF5C77", dash: true }, { values: r.s1, color: "#2ED9A0", dash: true }] },
+  { key: "pivots", label: "Pivot Points", type: "overlay", defaults: { enabled: false, color: "#4FA9FF" }, compute: (c) => batch3.pivotPointsStandard(c), toOverlay: (r) => [{ values: r.pivot, color: "var(--text-dim)" }, { values: r.r1, color: "#FF5C77", dash: true }, { values: r.s1, color: "#2ED9A0", dash: true }] },
   { key: "pricechannel", label: "Price Channel", type: "overlay", defaults: { enabled: false, period: 20, color: "#FF9F40" }, compute: (c, cl, cfg) => donchianChannels(c, cfg.period), toOverlay: (r, cfg) => [{ values: r.upper, color: cfg.color, dash: true }, { values: r.lower, color: cfg.color, dash: true }] },
   { key: "priceosc", label: "Price Osc", type: "pane", defaults: { enabled: false, fast: 10, slow: 21, color: "#7C5CFF" }, compute: (c, cl, cfg) => batch3.priceOscillator(cl, cfg.fast, cfg.slow), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
   { key: "pvt", label: "Price Vol Trend", type: "pane", defaults: { enabled: false, color: "#2ED9A0" }, compute: (c) => batch3.priceVolumeTrend(c), toPane: (r, cfg) => ({ lines: [{ values: r, color: cfg.color }] }) },
@@ -288,6 +288,46 @@ function toolFavoritesStorageKey() {
 function toolStyleMemoryStorageKey() {
   return "unblocked.toolStyleMemory.v1";
 }
+function themeStorageKey() {
+  return "unblocked.theme.v1";
+}
+
+// Chrome colors (backgrounds/borders/text) live as CSS variables so a
+// dark/light toggle can repaint the whole app without re-rendering every
+// component. Accent colors (the gold brand color, indicator/drawing
+// defaults, up/down candle colors) stay constant across both themes —
+// only the chart's own background/grid/text, set directly via
+// lightweight-charts' own API rather than CSS, are threaded through
+// separately (see the chartBg/chartGrid/chartBorder/chartText props
+// passed to TradingChart below).
+const THEME_VARS = {
+  dark: {
+    "--bg": "#0B0E14",
+    "--surface": "#191F2A",
+    "--surface2": "#131720",
+    "--border": "#1D232F",
+    "--border2": "#232A38",
+    "--border3": "#2A3140",
+    "--text": "#E8EAED",
+    "--text-dim": "#8B93A3",
+    "--text-faint": "#4A5063",
+  },
+  light: {
+    "--bg": "#F5F6F8",
+    "--surface": "#FFFFFF",
+    "--surface2": "#F0F1F4",
+    "--border": "#E1E4EA",
+    "--border2": "#D5D9E0",
+    "--border3": "#C7CCD6",
+    "--text": "#15181F",
+    "--text-dim": "#5B6472",
+    "--text-faint": "#9AA2B1",
+  },
+};
+const CHART_THEME = {
+  dark: { bg: "#0B0E14", grid: "#161B26", border: "#1D232F", text: "#8B93A3" },
+  light: { bg: "#FFFFFF", grid: "#ECEEF2", border: "#D5D9E0", text: "#5B6472" },
+};
 
 function loadJSON(key, fallback) {
   try {
@@ -341,7 +381,7 @@ function WhalePulseLayer({ events, candles }) {
 function PriceTicker({ candles, connected }) {
   if (candles.length < 2) {
     return (
-      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: "#4A5063" }}>
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: "var(--text-faint)" }}>
         {connected ? "loading price..." : "connecting..."}
       </div>
     );
@@ -360,7 +400,7 @@ function PriceTicker({ candles, connected }) {
     }
   }, [last.c]);
   return (
-    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: "tabular-nums", fontSize: 20, fontWeight: 700, color: flash ? (up ? "#2ED9A0" : "#FF5C77") : "#E8EAED", transition: "color 250ms ease", whiteSpace: "nowrap" }}>
+    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontVariantNumeric: "tabular-nums", fontSize: 20, fontWeight: 700, color: flash ? (up ? "#2ED9A0" : "#FF5C77") : "var(--text)", transition: "color 250ms ease", whiteSpace: "nowrap" }}>
       ${last.c < 10 ? last.c.toFixed(4) : last.c.toFixed(2)}
       <span style={{ fontSize: 12, marginLeft: 8, color: up ? "#2ED9A0" : "#FF5C77" }}>
         {up ? "▲" : "▼"} {(((last.c - prev.c) / prev.c) * 100).toFixed(2)}%
@@ -419,19 +459,19 @@ function SymbolSearch({ symbols, activeLabel, onSelect }) {
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
         placeholder={activeLabel || "search pair..."}
-        style={{ width: "100%", background: "#131720", border: "1px solid #2A3140", borderRadius: 6, padding: "7px 10px", color: "#E8EAED", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, outline: "none" }}
+        style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--border3)", borderRadius: 6, padding: "7px 10px", color: "var(--text)", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, outline: "none" }}
       />
       {open && (
-        <div style={{ position: "absolute", top: "110%", left: 0, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, zIndex: 30, width: 260, maxHeight: 300, overflow: "auto" }}>
-          {filtered.length === 0 && <div style={{ padding: 10, fontSize: 12, color: "#4A5063", fontFamily: "'Manrope', sans-serif" }}>No matches</div>}
+        <div style={{ position: "absolute", top: "110%", left: 0, background: "var(--surface)", border: "1px solid var(--border3)", borderRadius: 8, zIndex: 30, width: 260, maxHeight: 300, overflow: "auto" }}>
+          {filtered.length === 0 && <div style={{ padding: 10, fontSize: 12, color: "var(--text-faint)", fontFamily: "'Manrope', sans-serif" }}>No matches</div>}
           {filtered.map((s, i) => (
             <div
               key={symbolKey(s)}
               onMouseDown={() => pick(s)}
               onMouseEnter={() => setHighlight(i)}
-              style={{ padding: "8px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: "#E8EAED", cursor: "pointer", background: i === highlight ? "#232A38" : "transparent" }}
+              style={{ padding: "8px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: "var(--text)", cursor: "pointer", background: i === highlight ? "var(--border2)" : "transparent" }}
             >
-              {s.display} <span style={{ color: "#4A5063" }}>· {EXCHANGE_LABELS[s.exchange] || s.exchange} · {MARKET_TYPE_LABELS[s.marketType] || s.marketType}</span>
+              {s.display} <span style={{ color: "var(--text-faint)" }}>· {EXCHANGE_LABELS[s.exchange] || s.exchange} · {MARKET_TYPE_LABELS[s.marketType] || s.marketType}</span>
             </div>
           ))}
         </div>
@@ -482,14 +522,14 @@ function FavoritesDropdown({ onSelect }) {
           setOpen((o) => !o);
         }}
         title="Favorite indicators"
-        style={{ background: "transparent", color: "#F5B700", border: "1px solid #232A38", borderRadius: 6, padding: "5px 8px", fontSize: 12, cursor: "pointer" }}
+        style={{ background: "transparent", color: "#F5B700", border: "1px solid var(--border2)", borderRadius: 6, padding: "5px 8px", fontSize: 12, cursor: "pointer" }}
       >
         ★
       </button>
       {open && (
-        <div style={{ position: "absolute", top: "110%", right: 0, zIndex: 30, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, width: 200, maxHeight: 260, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+        <div style={{ position: "absolute", top: "110%", right: 0, zIndex: 30, background: "var(--surface)", border: "1px solid var(--border3)", borderRadius: 8, width: 200, maxHeight: 260, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
           {favorites.length === 0 ? (
-            <div style={{ padding: "14px 12px", fontSize: 11, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace" }}>
+            <div style={{ padding: "14px 12px", fontSize: 11, color: "var(--text-faint)", fontFamily: "'JetBrains Mono', monospace" }}>
               Star indicators in the search modal to pin them here.
             </div>
           ) : (
@@ -497,7 +537,7 @@ function FavoritesDropdown({ onSelect }) {
               <div
                 key={entry.id}
                 onClick={() => { onSelect(entry); setOpen(false); }}
-                style={{ padding: "8px 12px", fontSize: 12, color: "#E8EAED", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace" }}
+                style={{ padding: "8px 12px", fontSize: 12, color: "var(--text)", cursor: "pointer", fontFamily: "'JetBrains Mono', monospace" }}
               >
                 {entry.label}
               </div>
@@ -542,9 +582,9 @@ function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
   return (
     <div
       ref={ref}
-      style={{ position: "absolute", top: "110%", left: 0, zIndex: 30, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, width: 240, boxShadow: "0 8px 24px rgba(0,0,0,0.4)", overflow: "hidden" }}
+      style={{ position: "absolute", top: "110%", left: 0, zIndex: 30, background: "var(--surface)", border: "1px solid var(--border3)", borderRadius: 8, width: 240, boxShadow: "0 8px 24px rgba(0,0,0,0.4)", overflow: "hidden" }}
     >
-      <div style={{ display: "flex", borderBottom: "1px solid #2A3140" }}>
+      <div style={{ display: "flex", borderBottom: "1px solid var(--border3)" }}>
         {[["inputs", "Inputs"], ["style", "Style"]].map(([key, label]) => (
           <button
             key={key}
@@ -552,7 +592,7 @@ function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
             style={{
               flex: 1, padding: "9px 0", background: "none", border: "none", cursor: "pointer",
               fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
-              color: tab === key ? "#E8EAED" : "#4A5063",
+              color: tab === key ? "var(--text)" : "var(--text-faint)",
               borderBottom: tab === key ? "2px solid #F5B700" : "2px solid transparent",
             }}
           >
@@ -564,10 +604,10 @@ function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
       <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
         {tab === "inputs" && (
           inputFields.length === 0 ? (
-            <div style={{ fontSize: 11, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace" }}>No configurable inputs for {def.label}.</div>
+            <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'JetBrains Mono', monospace" }}>No configurable inputs for {def.label}.</div>
           ) : (
             inputFields.map((field) => (
-              <label key={field} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace" }}>
+              <label key={field} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 11, color: "var(--text-dim)", fontFamily: "'JetBrains Mono', monospace" }}>
                 {INPUT_LABELS[field] || field}
                 <input
                   type="number"
@@ -577,7 +617,7 @@ function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
                     const v = Number(e.target.value);
                     if (!Number.isNaN(v)) onChange({ ...cfg, [field]: v });
                   }}
-                  style={{ width: 64, background: "#0B0E14", border: "1px solid #2A3140", borderRadius: 4, color: "#E8EAED", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, padding: "3px 6px" }}
+                  style={{ width: 64, background: "var(--bg)", border: "1px solid var(--border3)", borderRadius: 4, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, padding: "3px 6px" }}
                 />
               </label>
             ))
@@ -587,13 +627,13 @@ function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
         {tab === "style" && (
           <>
             <div>
-              <div style={{ fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>Color</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>Color</div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 {COLOR_PRESETS.map((c) => (
                   <button
                     key={c}
                     onClick={() => onChange({ ...cfg, color: c })}
-                    style={{ width: 20, height: 20, borderRadius: "50%", background: c, border: cfg.color === c ? "2px solid #E8EAED" : "2px solid transparent", cursor: "pointer" }}
+                    style={{ width: 20, height: 20, borderRadius: "50%", background: c, border: cfg.color === c ? "2px solid var(--text)" : "2px solid transparent", cursor: "pointer" }}
                   />
                 ))}
                 {/* Full custom color, matching TradingView's "any color" swatch */}
@@ -602,32 +642,32 @@ function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
                   value={cfg.color}
                   onChange={(e) => onChange({ ...cfg, color: e.target.value })}
                   title="Custom color"
-                  style={{ width: 22, height: 22, padding: 0, border: "1px solid #2A3140", borderRadius: "50%", background: "none", cursor: "pointer" }}
+                  style={{ width: 22, height: 22, padding: 0, border: "1px solid var(--border3)", borderRadius: "50%", background: "none", cursor: "pointer" }}
                 />
               </div>
             </div>
 
             <div>
-              <div style={{ fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>Line width</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>Line width</div>
               <div style={{ display: "flex", gap: 6 }}>
                 {LINE_WIDTHS.map((w) => (
                   <button
                     key={w}
                     onClick={() => onChange({ ...cfg, lineWidth: w })}
                     style={{
-                      width: 30, height: 24, background: cfg.lineWidth === w ? "#2A3140" : "#0B0E14",
-                      border: "1px solid " + (cfg.lineWidth === w ? "#F5B700" : "#2A3140"), borderRadius: 4, cursor: "pointer",
+                      width: 30, height: 24, background: cfg.lineWidth === w ? "var(--border3)" : "var(--bg)",
+                      border: "1px solid " + (cfg.lineWidth === w ? "#F5B700" : "var(--border3)"), borderRadius: 4, cursor: "pointer",
                       display: "flex", alignItems: "center", justifyContent: "center",
                     }}
                   >
-                    <div style={{ width: 16, height: w, background: "#E8EAED", borderRadius: 1 }} />
+                    <div style={{ width: 16, height: w, background: "var(--text)", borderRadius: 1 }} />
                   </button>
                 ))}
               </div>
             </div>
 
             <div>
-              <div style={{ fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>Line style</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6 }}>Line style</div>
               <div style={{ display: "flex", gap: 6 }}>
                 {LINE_STYLES.map((s) => (
                   <button
@@ -635,12 +675,12 @@ function IndicatorSettings({ indKey, def, cfg, onChange, onClose }) {
                     onClick={() => onChange({ ...cfg, lineStyle: s.value })}
                     title={s.label}
                     style={{
-                      width: 44, height: 24, background: cfg.lineStyle === s.value ? "#2A3140" : "#0B0E14",
-                      border: "1px solid " + (cfg.lineStyle === s.value ? "#F5B700" : "#2A3140"), borderRadius: 4, cursor: "pointer",
+                      width: 44, height: 24, background: cfg.lineStyle === s.value ? "var(--border3)" : "var(--bg)",
+                      border: "1px solid " + (cfg.lineStyle === s.value ? "#F5B700" : "var(--border3)"), borderRadius: 4, cursor: "pointer",
                       display: "flex", alignItems: "center", justifyContent: "center",
                     }}
                   >
-                    <svg width="28" height="2"><line x1="0" y1="1" x2="28" y2="1" stroke="#E8EAED" strokeWidth="2" strokeDasharray={s.dash} /></svg>
+                    <svg width="28" height="2"><line x1="0" y1="1" x2="28" y2="1" stroke="var(--text)" strokeWidth="2" strokeDasharray={s.dash} /></svg>
                   </button>
                 ))}
               </div>
@@ -670,28 +710,28 @@ function IndicatorChip({ indKey, def, cfg, onToggle, onChange, onDuplicate, onRe
           alignItems: "center",
           gap: 4,
           background: cfg.enabled ? `${cfg.color}22` : "transparent",
-          border: "1px solid " + (cfg.enabled ? cfg.color + "55" : "#232A38"),
+          border: "1px solid " + (cfg.enabled ? cfg.color + "55" : "var(--border2)"),
           borderRadius: 6,
           padding: "3px 4px 3px 10px",
         }}
       >
         <button
           onClick={() => onToggle(indKey)}
-          style={{ background: "none", border: "none", color: cfg.enabled ? cfg.color : "#8B93A3", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer", padding: "2px 0" }}
+          style={{ background: "none", border: "none", color: cfg.enabled ? cfg.color : "var(--text-dim)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer", padding: "2px 0" }}
         >
           {def.label}{"period" in cfg ? ` ${cfg.period}` : ""}
         </button>
         <button
           onClick={() => setSettingsOpen((o) => !o)}
           title="Settings"
-          style={{ background: "none", border: "none", color: cfg.enabled ? cfg.color : "#4A5063", cursor: "pointer", fontSize: 11, padding: "2px 6px" }}
+          style={{ background: "none", border: "none", color: cfg.enabled ? cfg.color : "var(--text-faint)", cursor: "pointer", fontSize: 11, padding: "2px 6px" }}
         >
           ⚙
         </button>
         <button
           onClick={() => onDuplicate(indKey)}
           title="Add another instance (e.g. a second RSI at a different length)"
-          style={{ background: "none", border: "none", color: "#4A5063", cursor: "pointer", fontSize: 11, padding: "2px 4px" }}
+          style={{ background: "none", border: "none", color: "var(--text-faint)", cursor: "pointer", fontSize: 11, padding: "2px 4px" }}
         >
           ⧉
         </button>
@@ -699,7 +739,7 @@ function IndicatorChip({ indKey, def, cfg, onToggle, onChange, onDuplicate, onRe
           <button
             onClick={() => onRemove(indKey)}
             title="Remove this instance"
-            style={{ background: "none", border: "none", color: "#4A5063", cursor: "pointer", fontSize: 11, padding: "2px 4px" }}
+            style={{ background: "none", border: "none", color: "var(--text-faint)", cursor: "pointer", fontSize: 11, padding: "2px 4px" }}
           >
             ✕
           </button>
@@ -758,16 +798,16 @@ function ToolGroupDropdown({ group, activeTool, onSelect, direction = "down", fa
         style={{
           display: "flex", alignItems: "center", justifyContent: "center",
           background: isActive ? "#F5B70022" : "transparent",
-          color: isActive ? "#F5B700" : "#8B93A3",
-          border: "1px solid " + (isActive ? "#F5B70055" : "#232A38"),
+          color: isActive ? "#F5B700" : "var(--text-dim)",
+          border: "1px solid " + (isActive ? "#F5B70055" : "var(--border2)"),
           borderRadius: 6, padding: "8px", fontSize: 15, cursor: "pointer", width: 34,
         }}
       >
         {TOOL_ICONS[lastToolKey] || group.icon}
       </button>
       {open && (
-        <div style={{ position: "absolute", ...flyoutStyle, zIndex: 30, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, width: 210, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
-          <div style={{ padding: "6px 12px", fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1, borderBottom: "1px solid #232A38" }}>{group.label.toUpperCase()}</div>
+        <div style={{ position: "absolute", ...flyoutStyle, zIndex: 30, background: "var(--surface)", border: "1px solid var(--border3)", borderRadius: 8, width: 210, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+          <div style={{ padding: "6px 12px", fontSize: 10, color: "var(--text-faint)", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1, borderBottom: "1px solid var(--border2)" }}>{group.label.toUpperCase()}</div>
           {group.tools.map((t) => {
             const isFav = favoriteTools.includes(t.key);
             return (
@@ -779,12 +819,12 @@ function ToolGroupDropdown({ group, activeTool, onSelect, direction = "down", fa
                   background: activeTool === t.key ? "#F5B70011" : "transparent",
                 }}
               >
-                <span style={{ width: 18, textAlign: "center", fontSize: 14, color: activeTool === t.key ? "#F5B700" : "#8B93A3" }}>{TOOL_ICONS[t.key] || "?"}</span>
-                <span style={{ flex: 1, fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: activeTool === t.key ? "#F5B700" : "#E8EAED" }}>{t.label}</span>
+                <span style={{ width: 18, textAlign: "center", fontSize: 14, color: activeTool === t.key ? "#F5B700" : "var(--text-dim)" }}>{TOOL_ICONS[t.key] || "?"}</span>
+                <span style={{ flex: 1, fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: activeTool === t.key ? "#F5B700" : "var(--text)" }}>{t.label}</span>
                 <span
                   onClick={(e) => { e.stopPropagation(); onToggleFavorite && onToggleFavorite(t.key); }}
                   title={isFav ? "Remove from favorites" : "Add to favorites"}
-                  style={{ fontSize: 13, color: isFav ? "#F5B700" : "#4A5063", cursor: "pointer", padding: "0 2px" }}
+                  style={{ fontSize: 13, color: isFav ? "#F5B700" : "var(--text-faint)", cursor: "pointer", padding: "0 2px" }}
                 >
                   {isFav ? "★" : "☆"}
                 </span>
@@ -817,15 +857,15 @@ function FavoritesRow({ favoriteTools, activeTool, onSelect }) {
             display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px",
             fontSize: 14, cursor: "pointer",
             background: activeTool === t.key ? "#F5B70022" : "transparent",
-            color: activeTool === t.key ? "#F5B700" : "#8B93A3",
-            border: "1px solid " + (activeTool === t.key ? "#F5B70055" : "#232A38"),
+            color: activeTool === t.key ? "#F5B700" : "var(--text-dim)",
+            border: "1px solid " + (activeTool === t.key ? "#F5B70055" : "var(--border2)"),
             borderRadius: 6,
           }}
         >
           {TOOL_ICONS[t.key] || "★"}
         </button>
       ))}
-      <div style={{ width: "70%", height: 1, background: "#1D232F", margin: "4px 0" }} />
+      <div style={{ width: "70%", height: 1, background: "var(--border)", margin: "4px 0" }} />
     </>
   );
 }
@@ -847,7 +887,7 @@ function SelectionToolbar({ drawing, anchor, onChangeColor, onChangeWidth, onDup
       style={{
         position: "absolute", left, top, zIndex: 20,
         display: "flex", alignItems: "center", gap: 2,
-        background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8,
+        background: "var(--surface)", border: "1px solid var(--border3)", borderRadius: 8,
         padding: 4, boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
       }}
     >
@@ -855,31 +895,31 @@ function SelectionToolbar({ drawing, anchor, onChangeColor, onChangeWidth, onDup
         <button
           onClick={() => setOpenPanel((p) => (p === "color" ? null : "color"))}
           title="Color"
-          style={{ width: 22, height: 22, borderRadius: "50%", background: drawing.color || "#F5B700", border: "2px solid #0B0E14", cursor: "pointer" }}
+          style={{ width: 22, height: 22, borderRadius: "50%", background: drawing.color || "#F5B700", border: "2px solid var(--bg)", cursor: "pointer" }}
         />
         {openPanel === "color" && (
-          <div style={{ position: "absolute", top: "120%", left: 0, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, padding: 8, display: "flex", gap: 6, zIndex: 25 }}>
+          <div style={{ position: "absolute", top: "120%", left: 0, background: "var(--surface)", border: "1px solid var(--border3)", borderRadius: 8, padding: 8, display: "flex", gap: 6, zIndex: 25 }}>
             {COLOR_PRESETS.map((c) => (
-              <button key={c} onClick={() => { onChangeColor(c); setOpenPanel(null); }} style={{ width: 20, height: 20, borderRadius: "50%", background: c, border: drawing.color === c ? "2px solid #E8EAED" : "2px solid transparent", cursor: "pointer" }} />
+              <button key={c} onClick={() => { onChangeColor(c); setOpenPanel(null); }} style={{ width: 20, height: 20, borderRadius: "50%", background: c, border: drawing.color === c ? "2px solid var(--text)" : "2px solid transparent", cursor: "pointer" }} />
             ))}
           </div>
         )}
       </div>
 
-      <div style={{ width: 1, height: 18, background: "#2A3140", margin: "0 2px" }} />
+      <div style={{ width: 1, height: 18, background: "var(--border3)", margin: "0 2px" }} />
 
       <div style={{ position: "relative" }}>
         <button
           onClick={() => setOpenPanel((p) => (p === "width" ? null : "width"))}
           title="Line width"
-          style={{ padding: "4px 8px", background: "transparent", border: "none", color: "#8B93A3", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}
+          style={{ padding: "4px 8px", background: "transparent", border: "none", color: "var(--text-dim)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}
         >
           {drawing.width || 1}px
         </button>
         {openPanel === "width" && (
-          <div style={{ position: "absolute", top: "120%", left: 0, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, padding: 4, zIndex: 25, width: 70 }}>
+          <div style={{ position: "absolute", top: "120%", left: 0, background: "var(--surface)", border: "1px solid var(--border3)", borderRadius: 8, padding: 4, zIndex: 25, width: 70 }}>
             {LINE_WIDTHS.map((w) => (
-              <div key={w} onClick={() => { onChangeWidth(w); setOpenPanel(null); }} style={{ padding: "6px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: drawing.width === w ? "#F5B700" : "#E8EAED", cursor: "pointer" }}>
+              <div key={w} onClick={() => { onChangeWidth(w); setOpenPanel(null); }} style={{ padding: "6px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: drawing.width === w ? "#F5B700" : "var(--text)", cursor: "pointer" }}>
                 {w}px
               </div>
             ))}
@@ -887,11 +927,11 @@ function SelectionToolbar({ drawing, anchor, onChangeColor, onChangeWidth, onDup
         )}
       </div>
 
-      <div style={{ width: 1, height: 18, background: "#2A3140", margin: "0 2px" }} />
+      <div style={{ width: 1, height: 18, background: "var(--border3)", margin: "0 2px" }} />
 
-      <button onClick={onDuplicate} title="Duplicate" style={{ padding: "4px 8px", background: "transparent", border: "none", color: "#8B93A3", fontSize: 13, cursor: "pointer" }}>⧉</button>
+      <button onClick={onDuplicate} title="Duplicate" style={{ padding: "4px 8px", background: "transparent", border: "none", color: "var(--text-dim)", fontSize: 13, cursor: "pointer" }}>⧉</button>
       <button onClick={onDelete} title="Delete" style={{ padding: "4px 8px", background: "transparent", border: "none", color: "#FF5C77", fontSize: 13, cursor: "pointer" }}>🗑</button>
-      <button onClick={onDeselect} title="Deselect" style={{ padding: "4px 8px", background: "transparent", border: "none", color: "#4A5063", fontSize: 13, cursor: "pointer" }}>✕</button>
+      <button onClick={onDeselect} title="Deselect" style={{ padding: "4px 8px", background: "transparent", border: "none", color: "var(--text-faint)", fontSize: 13, cursor: "pointer" }}>✕</button>
     </div>
   );
 }
@@ -916,18 +956,18 @@ function AddCustomIntervalModal({ onAdd, onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000000AA", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#191F2A", border: "1px solid #2A3140", borderRadius: 10, width: 320, padding: 20, display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 12px 32px rgba(0,0,0,0.5)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", border: "1px solid var(--border3)", borderRadius: 10, width: 320, padding: 20, display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 12px 32px rgba(0,0,0,0.5)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#E8EAED", fontFamily: "'Manrope', sans-serif" }}>Add custom interval</div>
-          <span onClick={onClose} style={{ cursor: "pointer", color: "#8B93A3", fontSize: 16 }}>✕</span>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", fontFamily: "'Manrope', sans-serif" }}>Add custom interval</div>
+          <span onClick={onClose} style={{ cursor: "pointer", color: "var(--text-dim)", fontSize: 16 }}>✕</span>
         </div>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11, color: "var(--text-dim)", fontFamily: "'JetBrains Mono', monospace" }}>
           Type
           <select
             value={type}
             onChange={(e) => setType(e.target.value)}
-            style={{ background: "#0B0E14", border: "1px solid #2A3140", borderRadius: 6, color: "#E8EAED", padding: "8px 10px", fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }}
+            style={{ background: "var(--bg)", border: "1px solid var(--border3)", borderRadius: 6, color: "var(--text)", padding: "8px 10px", fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }}
           >
             {Object.keys(TF_UI_TO_UNIT).map((u) => (
               <option key={u} value={u}>{u}</option>
@@ -935,7 +975,7 @@ function AddCustomIntervalModal({ onAdd, onClose }) {
           </select>
         </label>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11, color: "#8B93A3", fontFamily: "'JetBrains Mono', monospace" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 11, color: "var(--text-dim)", fontFamily: "'JetBrains Mono', monospace" }}>
           Interval
           <input
             type="number"
@@ -943,17 +983,17 @@ function AddCustomIntervalModal({ onAdd, onClose }) {
             value={interval}
             onChange={(e) => setInterval_(e.target.value)}
             placeholder="e.g. 7"
-            style={{ background: "#0B0E14", border: "1px solid #2A3140", borderRadius: 6, color: "#E8EAED", padding: "8px 10px", fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }}
+            style={{ background: "var(--bg)", border: "1px solid var(--border3)", borderRadius: 6, color: "var(--text)", padding: "8px 10px", fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }}
           />
         </label>
 
-        <div style={{ fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.5 }}>
+        <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'JetBrains Mono', monospace", lineHeight: 1.5 }}>
           Synthesized from 1-minute candles — history available for up to 90 days back, live-updating from the moment it's added.
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 4 }}>
-          <button onClick={onClose} style={{ background: "transparent", border: "1px solid #2A3140", color: "#8B93A3", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}>Cancel</button>
-          <button onClick={submit} disabled={!interval} style={{ background: interval ? "#F5B700" : "#2A3140", border: "none", color: interval ? "#0B0E14" : "#4A5063", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: interval ? "pointer" : "default", fontWeight: 700 }}>Add</button>
+          <button onClick={onClose} style={{ background: "transparent", border: "1px solid var(--border3)", color: "var(--text-dim)", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}>Cancel</button>
+          <button onClick={submit} disabled={!interval} style={{ background: interval ? "#F5B700" : "var(--border3)", border: "none", color: interval ? "var(--bg)" : "var(--text-faint)", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: interval ? "pointer" : "default", fontWeight: 700 }}>Add</button>
         </div>
       </div>
     </div>
@@ -985,9 +1025,9 @@ function TimeframeRow({ symbol, tf, onSelect, customTimeframes, onAddCustom, onR
   }, []);
 
   const btnStyle = (active) => ({
-    background: active ? "#191F2A" : "transparent",
-    color: active ? "#F5B700" : "#8B93A3",
-    border: "1px solid " + (active ? "#2A3140" : "transparent"),
+    background: active ? "var(--surface)" : "transparent",
+    color: active ? "#F5B700" : "var(--text-dim)",
+    border: "1px solid " + (active ? "var(--border3)" : "transparent"),
     borderRadius: 6, padding: "5px 9px", fontSize: 12,
     fontFamily: "'JetBrains Mono', monospace", cursor: "pointer",
   });
@@ -1000,10 +1040,10 @@ function TimeframeRow({ symbol, tf, onSelect, customTimeframes, onAddCustom, onR
       <button onClick={() => setMoreOpen((o) => !o)} style={btnStyle(moreOpen)}>more ▾</button>
 
       {moreOpen && (
-        <div style={{ position: "absolute", top: "110%", left: 0, zIndex: 30, background: "#191F2A", border: "1px solid #2A3140", borderRadius: 8, padding: 8, width: 240, maxHeight: 320, overflow: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+        <div style={{ position: "absolute", top: "110%", left: 0, zIndex: 30, background: "var(--surface)", border: "1px solid var(--border3)", borderRadius: 8, padding: 8, width: 240, maxHeight: 320, overflow: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
           <div
             onClick={() => { setModalOpen(true); setMoreOpen(false); }}
-            style={{ padding: "8px 6px", cursor: "pointer", color: "#F5B700", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", borderBottom: "1px solid #232A38", marginBottom: 6 }}
+            style={{ padding: "8px 6px", cursor: "pointer", color: "#F5B700", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", borderBottom: "1px solid var(--border2)", marginBottom: 6 }}
           >
             + Add custom interval...
           </div>
@@ -1026,12 +1066,12 @@ function TimeframeRow({ symbol, tf, onSelect, customTimeframes, onAddCustom, onR
 
           {customTimeframes.length > 0 && (
             <>
-              <div style={{ fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1, margin: "10px 0 6px", borderTop: "1px solid #232A38", paddingTop: 8 }}>CUSTOM</div>
+              <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 1, margin: "10px 0 6px", borderTop: "1px solid var(--border2)", paddingTop: 8 }}>CUSTOM</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                 {customTimeframes.map((t) => (
                   <div key={t} style={{ display: "flex", alignItems: "center", gap: 2 }}>
                     <button onClick={() => { onSelect(t); setMoreOpen(false); }} style={btnStyle(tf === t)}>{t}</button>
-                    <span onClick={() => onRemoveCustom(t)} title="Remove" style={{ cursor: "pointer", color: "#4A5063", fontSize: 13, padding: "0 4px" }}>🗑</span>
+                    <span onClick={() => onRemoveCustom(t)} title="Remove" style={{ cursor: "pointer", color: "var(--text-faint)", fontSize: 13, padding: "0 4px" }}>🗑</span>
                   </div>
                 ))}
               </div>
@@ -1088,6 +1128,30 @@ export function AppShell({ onBack }) {
   // — so re-picking a tool pre-fills whatever color/width was last used for
   // that tool, instead of always resetting to the hardcoded default.
   const [toolStyleMemory, setToolStyleMemory] = useState(() => loadJSON(toolStyleMemoryStorageKey(), {}));
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem(themeStorageKey()) || "dark";
+    } catch {
+      return "dark";
+    }
+  });
+
+  // Applies the CSS variables for the chosen theme to :root — everything
+  // chrome-colored (backgrounds/borders/text across the whole app) reads
+  // these via var(--...) instead of a hardcoded hex, so this one effect
+  // repaints the entire UI. The chart's own canvas isn't CSS, so its
+  // colors are threaded through separately as props (see CHART_THEME).
+  useEffect(() => {
+    const vars = THEME_VARS[theme] || THEME_VARS.dark;
+    Object.entries(vars).forEach(([k, v]) => document.documentElement.style.setProperty(k, v));
+    try {
+      localStorage.setItem(themeStorageKey(), theme);
+    } catch {
+      // same as other localStorage writes in this file — best-effort
+    }
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
 
   useEffect(() => {
     fetchSymbols()
@@ -1235,7 +1299,7 @@ export function AppShell({ onBack }) {
   instancesOf("rsi").forEach((key) => {
     const c = cfg[key];
     if (!c.enabled) return;
-    indicatorPanes.push({ key, lines: [{ values: rsi(closes, c.period), color: c.color, ...st(c) }], bounds: [0, 100], refLines: [{ value: 30, color: "#2A3140" }, { value: 70, color: "#2A3140" }], stretchFactor: 1.4 });
+    indicatorPanes.push({ key, lines: [{ values: rsi(closes, c.period), color: c.color, ...st(c) }], bounds: [0, 100], refLines: [{ value: 30, color: "var(--border3)" }, { value: 70, color: "var(--border3)" }], stretchFactor: 1.4 });
   });
   instancesOf("macd").forEach((key) => {
     const c = cfg[key];
@@ -1252,7 +1316,7 @@ export function AppShell({ onBack }) {
     const c = cfg[key];
     if (!c.enabled) return;
     const s = stochRsi(closes, c.period, c.period, c.smoothD);
-    indicatorPanes.push({ key, lines: [{ values: s.k, color: c.color, ...st(c) }, { values: s.d, color: "#FF6D00", ...st(c) }], bounds: [0, 100], refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }], stretchFactor: 1.4 });
+    indicatorPanes.push({ key, lines: [{ values: s.k, color: c.color, ...st(c) }, { values: s.d, color: "#FF6D00", ...st(c) }], bounds: [0, 100], refLines: [{ value: 20, color: "var(--border3)" }, { value: 80, color: "var(--border3)" }], stretchFactor: 1.4 });
   });
   instancesOf("atr").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: atr(candles, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
   instancesOf("adx").forEach((key) => {
@@ -1271,7 +1335,7 @@ export function AppShell({ onBack }) {
     const c = cfg[key];
     if (!c.enabled) return;
     const s = stochastic(candles, c.period, c.smoothD, 3);
-    indicatorPanes.push({ key, lines: [{ values: s.k, color: c.color, ...st(c) }, { values: s.d, color: "#FF6D00", ...st(c) }], bounds: [0, 100], refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }], stretchFactor: 1.4 });
+    indicatorPanes.push({ key, lines: [{ values: s.k, color: c.color, ...st(c) }, { values: s.d, color: "#FF6D00", ...st(c) }], bounds: [0, 100], refLines: [{ value: 20, color: "var(--border3)" }, { value: 80, color: "var(--border3)" }], stretchFactor: 1.4 });
   });
   instancesOf("cci").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: cci(candles, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
   instancesOf("williamsr").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: williamsR(candles, c.period), color: c.color, ...st(c) }], bounds: [-100, 0], stretchFactor: 1.2 }); });
@@ -1281,7 +1345,7 @@ export function AppShell({ onBack }) {
   instancesOf("ao").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, histogram: { values: awesomeOscillator(candles), upColor: "#2ED9A055", downColor: "#FF5C7755" }, stretchFactor: 1.2 }); });
   instancesOf("ac").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, histogram: { values: acceleratorOscillator(candles), upColor: "#2ED9A055", downColor: "#FF5C7755" }, stretchFactor: 1.2 }); });
   instancesOf("stddev").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: standardDeviation(closes, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
-  instancesOf("mfi").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: moneyFlowIndex(candles, c.period), color: c.color, ...st(c) }], bounds: [0, 100], refLines: [{ value: 20, color: "#2A3140" }, { value: 80, color: "#2A3140" }], stretchFactor: 1.4 }); });
+  instancesOf("mfi").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: moneyFlowIndex(candles, c.period), color: c.color, ...st(c) }], bounds: [0, 100], refLines: [{ value: 20, color: "var(--border3)" }, { value: 80, color: "var(--border3)" }], stretchFactor: 1.4 }); });
   instancesOf("cmf").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: chaikinMoneyFlow(candles, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
   instancesOf("bop").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: balanceOfPower(candles), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
   instancesOf("trix").forEach((key) => { const c = cfg[key]; if (c.enabled) indicatorPanes.push({ key, lines: [{ values: trix(closes, c.period), color: c.color, ...st(c) }], stretchFactor: 1.2 }); });
@@ -1414,7 +1478,7 @@ export function AppShell({ onBack }) {
     if (drawTool === "text") {
       const text = window.prompt("Note text:");
       if (text) {
-        setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: "text", points: [point], text, color: toolStyleMemory.text?.color || "#E8EAED" }]);
+        setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: "text", points: [point], text, color: toolStyleMemory.text?.color || "var(--text)" }]);
       }
       setDrawTool(null);
       return;
@@ -1520,24 +1584,24 @@ export function AppShell({ onBack }) {
       <div style={{ padding: 40, color: "#FF5C77", fontFamily: "'Manrope', sans-serif" }}>
         {symbolsError}
         <div style={{ marginTop: 16 }}>
-          <button onClick={onBack} style={{ background: "none", border: "1px solid #2A3140", color: "#E8EAED", padding: "8px 16px", borderRadius: 6, cursor: "pointer" }}>← back</button>
+          <button onClick={onBack} style={{ background: "none", border: "1px solid var(--border3)", color: "var(--text)", padding: "8px 16px", borderRadius: 6, cursor: "pointer" }}>← back</button>
         </div>
       </div>
     );
   }
 
   if (!activeSymbol) {
-    return <div style={{ padding: 40, color: "#8B93A3", fontFamily: "'Manrope', sans-serif" }}>Loading symbols...</div>;
+    return <div style={{ padding: 40, color: "var(--text-dim)", fontFamily: "'Manrope', sans-serif" }}>Loading symbols...</div>;
   }
 
   const activeLabel = `${activeSymbol.display} · ${EXCHANGE_LABELS[activeSymbol.exchange] || activeSymbol.exchange} · ${MARKET_TYPE_LABELS[activeSymbol.marketType] || activeSymbol.marketType}`;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 16px", borderBottom: "1px solid #1D232F", flexWrap: "wrap" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: "#8B93A3", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>← back</button>
+      <header style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 16px", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: 13, flexShrink: 0 }}>← back</button>
         <SymbolSearch symbols={symbols} activeLabel={activeLabel} onSelect={setActiveSymbol} />
-        <div style={{ width: 1, height: 18, background: "#1D232F" }} />
+        <div style={{ width: 1, height: 18, background: "var(--border)" }} />
         <TimeframeRow
           symbol={activeSymbol}
           tf={tf}
@@ -1546,26 +1610,33 @@ export function AppShell({ onBack }) {
           onAddCustom={addCustomTimeframe}
           onRemoveCustom={removeCustomTimeframe}
         />
-        <div style={{ width: 1, height: 18, background: "#1D232F" }} />
+        <div style={{ width: 1, height: 18, background: "var(--border)" }} />
         <button
           onClick={() => setPickerOpen(true)}
-          style={{ background: "transparent", color: "#8B93A3", border: "1px solid #232A38", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}
+          style={{ background: "transparent", color: "var(--text-dim)", border: "1px solid var(--border2)", borderRadius: 6, padding: "5px 10px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer" }}
         >
           + Indicators
         </button>
         <FavoritesDropdown onSelect={handlePickerSelect} />
+        <button
+          onClick={toggleTheme}
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          style={{ marginLeft: "auto", background: "transparent", color: "var(--text-dim)", border: "1px solid var(--border2)", borderRadius: 6, padding: "5px 9px", fontSize: 13, cursor: "pointer", flexShrink: 0 }}
+        >
+          {theme === "dark" ? "☀" : "☾"}
+        </button>
       </header>
 
       <div style={{ display: "flex", flex: "1 1 80%", minHeight: 0 }}>
-        <aside style={{ width: 44, flexShrink: 0, borderRight: "1px solid #1D232F", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "8px 5px", overflow: "visible" }}>
+        <aside style={{ width: 44, flexShrink: 0, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "8px 5px", overflow: "visible" }}>
           <button
             onClick={() => { setDrawTool(null); setPendingPoints([]); }}
             title="Cursor — select and drag existing drawings"
             style={{
               display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 15, cursor: "pointer",
               background: !drawTool ? "#F5B70022" : "transparent",
-              color: !drawTool ? "#F5B700" : "#8B93A3",
-              border: "1px solid " + (!drawTool ? "#F5B70055" : "#232A38"),
+              color: !drawTool ? "#F5B700" : "var(--text-dim)",
+              border: "1px solid " + (!drawTool ? "#F5B70055" : "var(--border2)"),
               borderRadius: 6,
             }}
           >
@@ -1586,33 +1657,33 @@ export function AppShell({ onBack }) {
             />
           ))}
 
-          <div style={{ width: "70%", height: 1, background: "#1D232F", margin: "4px 0" }} />
+          <div style={{ width: "70%", height: 1, background: "var(--border)", margin: "4px 0" }} />
 
           <button
             onClick={() => setMagnetOn((v) => !v)}
             title="Magnet mode — snap drawings to candle close"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 14, cursor: "pointer", background: magnetOn ? "#F5B70022" : "transparent", color: magnetOn ? "#F5B700" : "#8B93A3", border: "1px solid " + (magnetOn ? "#F5B70055" : "#232A38"), borderRadius: 6 }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 14, cursor: "pointer", background: magnetOn ? "#F5B70022" : "transparent", color: magnetOn ? "#F5B700" : "var(--text-dim)", border: "1px solid " + (magnetOn ? "#F5B70055" : "var(--border2)"), borderRadius: 6 }}
           >
             ⊚
           </button>
           <button
             onClick={() => setLocked((v) => !v)}
             title={locked ? "Locked — drawings can't be erased or dragged" : "Unlocked"}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 14, cursor: "pointer", background: locked ? "#F5B70022" : "transparent", color: locked ? "#F5B700" : "#8B93A3", border: "1px solid " + (locked ? "#F5B70055" : "#232A38"), borderRadius: 6 }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 14, cursor: "pointer", background: locked ? "#F5B70022" : "transparent", color: locked ? "#F5B700" : "var(--text-dim)", border: "1px solid " + (locked ? "#F5B70055" : "var(--border2)"), borderRadius: 6 }}
           >
             {locked ? "🔒" : "🔓"}
           </button>
           <button
             onClick={() => setDrawingsHidden((v) => !v)}
             title={drawingsHidden ? "Drawings hidden — tap to show" : "Hide drawings"}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 14, cursor: "pointer", background: "transparent", color: drawingsHidden ? "#4A5063" : "#8B93A3", border: "1px solid #232A38", borderRadius: 6 }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 14, cursor: "pointer", background: "transparent", color: drawingsHidden ? "var(--text-faint)" : "var(--text-dim)", border: "1px solid var(--border2)", borderRadius: 6 }}
           >
             👁
           </button>
           <button
             onClick={() => { if (drawings.length > 0 && window.confirm(`Remove all ${drawings.length} drawings?`)) { setDrawings([]); setSelectedId(null); } }}
             title="Remove all drawings"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 14, cursor: "pointer", background: "transparent", color: "#8B93A3", border: "1px solid #232A38", borderRadius: 6 }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 34, padding: "8px", fontSize: 14, cursor: "pointer", background: "transparent", color: "var(--text-dim)", border: "1px solid var(--border2)", borderRadius: 6 }}
           >
             🗑
           </button>
@@ -1620,7 +1691,7 @@ export function AppShell({ onBack }) {
 
         <main style={{ flex: 1, position: "relative", padding: "12px 16px 4px", minHeight: 0, display: "flex", flexDirection: "column" }}>
           {drawTool && (
-            <div style={{ position: "absolute", top: 4, left: 16, zIndex: 5, display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", background: "#0B0E1499", padding: "2px 8px", borderRadius: 4 }}>
+            <div style={{ position: "absolute", top: 4, left: 16, zIndex: 5, display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "var(--text-faint)", fontFamily: "'JetBrains Mono', monospace", background: "#0B0E1499", padding: "2px 8px", borderRadius: 4 }}>
               {(() => {
                 const toolDef = ALL_DRAW_TOOLS.find((t) => t.key === drawTool);
                 const needed = toolDef?.clicksNeeded;
@@ -1631,7 +1702,7 @@ export function AppShell({ onBack }) {
               })()}
               {ALL_DRAW_TOOLS.find((t) => t.key === drawTool)?.clicksNeeded === "unlimited" && (
                 <>
-                  <span onClick={finishUnlimitedDrawing} style={{ cursor: "pointer", color: pendingPoints.length >= 2 ? "#2ED9A0" : "#4A5063" }}>✓ done</span>
+                  <span onClick={finishUnlimitedDrawing} style={{ cursor: "pointer", color: pendingPoints.length >= 2 ? "#2ED9A0" : "var(--text-faint)" }}>✓ done</span>
                   <span onClick={cancelDrawing} style={{ cursor: "pointer", color: "#FF5C77" }}>✕ cancel</span>
                 </>
               )}
@@ -1639,9 +1710,9 @@ export function AppShell({ onBack }) {
           )}
           <WhalePulseLayer events={whaleEvents} candles={candles} />
           {loading ? (
-            <div style={{ color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, padding: 20 }}>loading candles...</div>
+            <div style={{ color: "var(--text-faint)", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, padding: 20 }}>loading candles...</div>
           ) : candles.length === 0 ? (
-            <div style={{ color: "#4A5063", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, padding: 20 }}>
+            <div style={{ color: "var(--text-faint)", fontFamily: "'JetBrains Mono', monospace", fontSize: 12, padding: 20 }}>
               No historical candles yet for {activeLabel} — either it needs backfilling, or the relay hasn't written any live candles for it yet.
             </div>
           ) : (
@@ -1667,6 +1738,10 @@ export function AppShell({ onBack }) {
                 priceOverlay={<PriceTicker candles={candles} connected={connected} />}
                 mainLegend={mainLegend}
                 paneLegends={paneLegends}
+                chartBg={CHART_THEME[theme]?.bg}
+                chartGrid={CHART_THEME[theme]?.grid}
+                chartBorder={CHART_THEME[theme]?.border}
+                chartText={CHART_THEME[theme]?.text}
               />
               {!drawingsHidden && (
                 <SelectionToolbar
@@ -1690,7 +1765,7 @@ export function AppShell({ onBack }) {
             <div
               key={d.id}
               onClick={() => !drawTool && setSelectedId(d.id)}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: selectedId === d.id ? "#F5B70022" : "#191F2A", border: "1px solid " + (selectedId === d.id ? "#F5B70055" : "#2A3140"), borderRadius: 6, padding: "3px 8px", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "#8B93A3", cursor: drawTool ? "default" : "pointer" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: selectedId === d.id ? "#F5B70022" : "var(--surface)", border: "1px solid " + (selectedId === d.id ? "#F5B70055" : "var(--border3)"), borderRadius: 6, padding: "3px 8px", fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "var(--text-dim)", cursor: drawTool ? "default" : "pointer" }}
             >
               {d.type}{d.type === "text" ? `: ${d.text?.slice(0, 16)}` : ""}
               <span onClick={(e) => { e.stopPropagation(); removeDrawing(d.id); }} style={{ cursor: "pointer", color: "#FF5C77", fontWeight: 700 }}>×</span>
